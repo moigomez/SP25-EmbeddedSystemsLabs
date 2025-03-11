@@ -52,27 +52,23 @@ clr R23           ; Initialize mode: 0 = increment, 1 = decrement
 ; Main Program Loop
 ;----------------------------------------
 main_loop:
-    
-	;sbic PINB, 3
-	;rjmp main_loop
-    ;rcall wait_for_button_release
-
-/*
-    ; Make sure counter has not reached max value
-	cpi R19, 15     ; if (R19 >= 15) {
-	brge main_loop	; } else {
-	inc R19         ;   R19++
-                    ; }
-*/
-
+	ldi R29, 0
     rcall read_RPG_direction 
+
+    ; Check if RPG is resting on detent and update count accordignly 
+	cpi R20, 3        ; if (R20 != 3) {
+	brne main_loop    ; }
+	cpi R29, 1        ; else if (R29 == 1) {
+	breq increment    ;     R19++
+	cpi R29, 2        ; } else if (R29 == 2) }
+	breq decrement    ;     R19--
+                      ; }
 
 	; Load patterns into FLASH
     ldi ZL, low(digit_patterns)
     ldi ZH, high(digit_patterns)
-    
+
 	; Set index of pattern to retrieve
-    ;--ldi R16, 1
 	mov R16, R19
     lsl R16
     
@@ -83,22 +79,27 @@ main_loop:
 	; Load chosen pattern to R18
 	lpm R18, Z
 
-
 	; Push pattern to display
     rcall display_pattern
 
-	; rcall read_RPG_direction
+rjmp main_loop
 
-	rcall wait_for_button_press
 
-	;wait:
-	;sbis PINB, 3
-	;rjmp wait
-
-	;rcall read_RPG_direction
-	
-	rjmp main_loop
-
+;----------------------------------------
+; Helper Subroutines
+;----------------------------------------
+increment:
+    ; Make sure counter has not reached max value
+	cpi R19, 15       ; if (R19 >= 15) {
+	brge main_loop    ; } else {
+	inc R19           ;     R19++
+    rjmp main_loop    ; }
+decrement:
+    ; Make sure counter has not reached min value
+	cpi R19, 0        ; if (R19 == 0) {
+	breq main_loop    ; } else {
+	dec R19           ;     R19--
+	rjmp main_loop    ; }
 
 
 wait_for_button_press:
@@ -122,75 +123,43 @@ read_RPG_direction:
 
     ; Compare current state (R21) with previous state (R20)
     cp R21, R20
-    breq read_complete        ; If no change, exit
+    breq read_complete    ; If no change, exit
 
     ; Encode previous + current state into 4 bits (2-bit shift)
-    lsl R20               ; Shift previous state left by 2
+    lsl R20
     lsl R20
     or R20, R21           ; Combine with new state
 
     ; Check transition pattern using known quadrature sequences
-    cpi R20, 0b0001       ; 00 -> 01 (CW)
-    breq RPG_rotated_CW
-    cpi R20, 0b0111       ; 01 -> 11 (CW)
-    breq RPG_rotated_CW
-    cpi R20, 0b1110       ; 11 -> 10 (CW)
-    breq RPG_rotated_CW
-    cpi R20, 0b1000       ; 10 -> 00 (CW)
-    breq RPG_rotated_CW
+    cpi R20, 0b0001
+    breq RPG_rotated_CCW
+    cpi R20, 0b0111
+    breq RPG_rotated_CCW
+    cpi R20, 0b1110
+    breq RPG_rotated_CCW
+    cpi R20, 0b1000
+    breq RPG_rotated_CCW
 
-    cpi R20, 0b0010       ; 00 -> 10 (CCW)
-    breq RPG_rotated_CCW
-    cpi R20, 0b0100       ; 10 -> 11 (CCW)
-    breq RPG_rotated_CCW
-    cpi R20, 0b1101       ; 11 -> 01 (CCW)
-    breq RPG_rotated_CCW
-    cpi R20, 0b1011       ; 01 -> 00 (CCW)
-    breq RPG_rotated_CCW
+    cpi R20, 0b0010
+    breq RPG_rotated_CW
+    cpi R20, 0b0100
+    breq RPG_rotated_CW
+    cpi R20, 0b1101
+    breq RPG_rotated_CW
+    cpi R20, 0b1011
+    breq RPG_rotated_CW
 
     rjmp updateState     ; No valid movement, update last state
-
 RPG_rotated_CW:
-    inc R19              ; Increment counter for CW rotation
+	ldi R29, 1
     rjmp updateState
-
 RPG_rotated_CCW:
-    dec R19              ; Decrement counter for CCW rotation
+	ldi R29, 2
     rjmp updateState
-
 updateState:
-    mov R20, R21          ; Save current state as previous
+    mov R20, R21         ; Save current state as previous
 read_complete:
-    ret                  ; Return to main loop
-
-
-
-/*
-read_RPG_direction:
-	sbic PINB, 4
-	rjmp read_complete
-
-	sbic PINB, 5
-	rjmp RPG_rotated_CW
-
-	rjmp RPG_rotated_CCW
-
-RPG_rotated_CW:
-    ldi R20, 1
-	;inc R19
-	rjmp read_complete
-
-RPG_rotated_CCW:
-    ldi R20, 0
-	;dec R19
-	rjmp read_complete
-
-read_complete:
-	ret
-*/
-
-
-
+    ret
 
 
 
