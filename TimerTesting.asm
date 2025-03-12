@@ -52,6 +52,20 @@ wait_release:
     mov R20, R21        ; Store the count
     rjmp wait_release   ; Keep waiting
 
+count_overflows:
+    in R21, TIFR0       ; Read Timer0 Interrupt Flag Register
+    sbrs R21, TOV0      ; Skip if Timer0 has not overflowed
+    rjmp count_overflows ; Keep waiting for overflow
+
+    ; Timer0 overflowed
+    inc R20             ; Increment overflow counter
+    out TCNT0, R19      ; Reset Timer0 to 0
+    sbi TIFR0, TOV0     ; Clear the overflow flag manually
+
+    cpi R20, 1953       ; If we reached ~2 seconds worth of overflows?
+    brlo count_overflows ; Keep waiting if not enough overflows
+
+
 end_press:
     ; Decide based on press time
     cpi R20, 50         ; If count < 50 (short press)
