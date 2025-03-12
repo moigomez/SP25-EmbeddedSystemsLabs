@@ -14,10 +14,18 @@ R16 - Index; Contains the index of the lookup table for the chosen digit
 R17 - Shift Counter; 8-bit counter that shifts out data from register
 R18 - Digit Value; Contains the data representing the digit on the 7-segment display
 R19 - Digit Counter; Contains the incremented/decremented value for 7-segment display
-R23 - Mode; Not implemented
 
-R20 - RPG Direction; Stores the direction of RPG encoder
+R20 - RPG State; Stores the value of the quadrature sequences
 R21 - RPG Temporary Register; Stores temporary values that aid in decoding RPG
+R22 - RPG Direction; Stores the direction of RPG encoder
+
+
+
+
+;R28
+;R27
+;R28
+;R29
 
 ----------------------------------------*/
 
@@ -44,45 +52,83 @@ sbi PORTB, 3      ; Enable pull-up resistor on PB3
 sbi PORTB, 4      ; Enable pull-up on PB4
 sbi PORTB, 5      ; Enable pull-up on PB5
 
+; sbi DDRB, 5       ; Turn Off LED (L)
+; cbi PORTB, 5
+
 clr R19
 clr R18           ; Initialize counter to 0
-clr R23           ; Initialize mode: 0 = increment, 1 = decrement
+
+; ; === Setup Timer0 (Normal Mode) ===
+; ldi R25, (1 << CS02) | (1 << CS00)  ; Prescaler 1024
+; out TCCR0B, R25                     ; Start Timer0
+; clr R23                              
+
+.def tmp1 = R23        ; Temporary register
+.def tmp2 = R24        ; Temporary register
+
 
 ;----------------------------------------
 ; Main Program Loop
 ;----------------------------------------
 main_loop:
-	ldi R29, 0
+
+	ldi R22, 0
     rcall read_RPG_direction 
+    ;rcall read_button_state
 
     ; Check if RPG is resting on detent and update count accordignly 
 	cpi R20, 3        ; if (R20 != 3) {
 	brne main_loop    ; }
-	cpi R29, 1        ; else if (R29 == 1) {
+	cpi R22, 1        ; else if (R22 == 1) {
 	breq increment    ;     R19++
-	cpi R29, 2        ; } else if (R29 == 2) }
+	cpi R22, 2        ; } else if (R22 == 2) }
 	breq decrement    ;     R19--
                       ; }
 
-	; Load patterns into FLASH
-    ldi ZL, low(digit_patterns)
-    ldi ZH, high(digit_patterns)
+	button_check:
+        sbic PINB, 3
+        rjmp display_update
 
-	; Set index of pattern to retrieve
-	mov R16, R19
-    lsl R16
-    
-	; Add offset to Z register
-    add ZL, R16
-    adc ZH, R1
+        rcall start_timer 
 
-	; Load chosen pattern to R18
-	lpm R18, Z
+    ; Wait for button release or timeout
+    wait_release:
+        sbis PINB, 3
+        rjmp check_time   
 
-	; Push pattern to display
-    rcall display_pattern
+        rjmp wait_release ; Keep waiting if still pressed
 
-rjmp main_loop
+    check_time:
+        rcall check_timer ; Call function to check if time < 1 sec
+
+        cpi R25, 1        ; Check if timer expired
+        breq timeout      ; If R25 == 1, time exceeded, don't increment
+
+        rcall increment   ; Otherwise, increment R19
+
+    timeout:
+        rjmp display_update ; Always update display after any input
+
+    display_update:
+        ; Load patterns into FLASH
+        ldi ZL, low(digit_patterns)
+        ldi ZH, high(digit_patterns)
+
+        ; Set index of pattern to retrieve
+        mov R16, R19
+        lsl R16
+        
+        ; Add offset to Z register
+        add ZL, R16
+        adc ZH, R1
+
+        ; Load chosen pattern to R18
+        lpm R18, Z
+
+        ; Push pattern to display
+        rcall display_pattern
+
+rjmp main_loop  
 
 
 ;----------------------------------------
@@ -101,7 +147,7 @@ decrement:
 	dec R19           ;     R19--
 	rjmp main_loop    ; }
 
-
+/*
 wait_for_button_press:
     sbic PINB, 3
 	rjmp wait_for_button_press
@@ -111,7 +157,7 @@ wait_for_button_release:
     sbis PINB, 3
 	rjmp wait_for_button_release
 	ret
-
+*/
 
 read_RPG_direction:
     ; Read A and B, shifting A into bit 1, B into bit 0 -> Current state
@@ -151,15 +197,81 @@ read_RPG_direction:
 
     rjmp updateState     ; No valid movement, update last state
 RPG_rotated_CW:
-	ldi R29, 1
+	ldi R22, 1
     rjmp updateState
 RPG_rotated_CCW:
-	ldi R29, 2
+	ldi R22, 2
     rjmp updateState
 updateState:
     mov R20, R21         ; Save current state as previous
 read_complete:
     ret
+
+/*
+read_button_state:
+    sbic PINB, 3       
+    rjmp button_released
+
+button_pressed:
+    ldi R26, 10
+	ldi R19, 4	 
+    ret               
+
+button_released:
+    ldi R26, 20      	 
+    ret    
+*/
+
+
+; --------------------------
+; Subroutine: start_timer
+; --------------------------
+start_timer:
+    ldi R30, 0x02          ; Set prescaler
+    out 0x33, R30          ; Configure Timer0
+    rcall delay            ; Call provided delay function
+    ret
+
+; --------------------------
+; Subroutine: check_timer
+; Returns 1 in R25 if timeout exceeded, 0 otherwise
+; --------------------------
+check_timer:
+    in tmp2, TIFR0         ; Read timer flags
+    sbrs tmp2, TOV0        ; Check if timer overflow occurred
+    rjmp not_expired       ; If no overflow, jump
+
+    ldi R25, 1             ; Timer expired (set flag in R25)
+    ret
+
+not_expired:
+    ldi R25, 0             ; Timer not expired
+    ret
+
+; --------------------------
+; Subroutine: Delay using Timer0 Overflow
+; --------------------------
+delay:
+    ; Stop Timer0
+    in tmp1, TCCR0B        ; Save configuration
+    ldi tmp2, 0x00         ; Stop Timer0
+    out TCCR0B, tmp2
+
+    ; Clear overflow flag
+    in tmp2, TIFR0         ; Read TIFR0
+    sbr tmp2, 1 << TOV0    ; Clear TOV0 by writing logic 1
+    out TIFR0, tmp2
+
+    ; Start Timer0 with new count
+    out TCNT0, tmp1        ; Load counter
+    out TCCR0B, tmp1       ; Restart Timer0
+
+wait:
+    in tmp2, TIFR0         ; Read TIFR0
+    sbrs tmp2, TOV0        ; Check overflow flag
+    rjmp wait              ; Wait until overflow occurs
+    ret
+
 
 
 
@@ -203,162 +315,3 @@ lookup_table: .dw 0, 1, 4, 9, 16
     
     lpm r18, Z
 	*/
-
-
-/*
-.include "m328Pdef.inc"
-
-.cseg
-.org 0x00
-
-;----------------------------------------
-; Configure I/O Lines
-;----------------------------------------
-sbi DDRB, 0       ; PB0 (SER) - Output
-sbi DDRB, 1       ; PB1 (RCLK) - Output
-sbi DDRB, 2       ; PB2 (SRCLK) - Output
-cbi DDRB, 3       ; PB3 (BUTTON) - Input
-sbi PORTB, 3      ; Enable pull-up resistor on PB3
-
-clr R18           ; Initialize counter to 0
-clr R23           ; Initialize mode: 0 = increment, 1 = decrement
-;rcall update_display  ; Display '0' at startup
-
-;----------------------------------------
-; Main Program Loop
-;----------------------------------------
-mainLoop:
-    sbic PINB, 3      ; Wait for button press (low)
-    rjmp mainLoop
-
-    ; Check hold time: >2s for toggle, ?4s for reset (no software debounce)
-    ldi R20, 255      ; Outer loop base
-    ldi R21, 255      ; Middle loop
-    ldi R22, 20       ; Inner loop for ~4s total
-    clr R24           ; Flag: 0 = short, 1 = toggle, 2 = reset
-
-check_hold:
-    sbic PINB, 3      ; If released (high), short press
-    rjmp short_press
-    dec R20
-    brne check_hold
-    dec R21
-    brne check_hold
-    cpi R22, 10       ; ~2s mark
-    brne not_toggle_yet
-    ldi R24, 1        ; Mark toggle threshold reached (>2s)
-not_toggle_yet:
-    dec R22
-    brne check_hold
-    ldi R24, 2        ; Mark reset threshold reached (?4s)
-
-    ; Process hold result
-    cpi R24, 2        ; Check if reset threshold met (?4s)
-    breq toggle_and_reset
-    cpi R24, 1        ; Check if toggle threshold met (>2s, <4s)
-    breq toggle_mode_only
-    rjmp short_press  ; Short press if released early
-
-toggle_and_reset:
-    clr R18           ; Reset counter to 0
-    rjmp update_and_release
-
-toggle_mode_only:
-    rcall toggle_mode ; Toggle mode without reset
-    rjmp update_and_release
-
-toggle_mode:
-    cpi R23, 0        ; Check current mode
-    breq set_increment  ; If decrement (1), switch to increment (0)
-    ldi R23, 1        ; If increment (0), switch to decrement (1)
-    ret
-set_increment:
-    clr R23           ; Set to increment mode
-    ret
-
-update_and_release:
-    rcall update_display  ; Show current value (after toggle or reset)
-
-wait_release:
-    sbis PINB, 3      ; Wait for release after long press
-    rjmp wait_release
-    rjmp mainLoop     ; No software debounce rely on hardware
-
-short_press:
-    cpi R23, 1        ; Check mode
-    breq decrement    ; If 1, decrement
-increment:
-    inc R18           ; Incrsement counter
-    cpi R18, 16       ; Check if reached 16
-    brlo update_display
-    clr R18
-    rjmp update_display
-decrement:
-    dec R18           ; Decrement counter
-    brpl update_display  ; If R18 >= 0, update
-    ldi R18, 15       ; If R18 < 0, wrap to 15
-
-update_display:
-    ldi ZL, LOW(digit_patterns << 1)
-    ldi ZH, HIGH(digit_patterns << 1)
-    add ZL, R18
-    brcc no_carry
-    inc ZH
-no_carry:
-    lpm R16, Z        ; Load base pattern
-    cpi R23, 1        ; Check mode
-    brne skip_dp      ; If decrement, set DP
-    ori R16, 0b00010000  ; Set bit 4 (P=DP) for decrement mode
-skip_dp:
-    rcall display
-
-    ; Wait for release after short press
-release_wait:
-    sbis PINB, 3
-    rjmp release_wait
-    rjmp mainLoop     ; No software debounce rely on hardware
-
-;----------------------------------------
-; 7-Segment Display Patterns (Common Cathode, Hex 0-F)
-;----------------------------------------
-digit_patterns:    ;0bGEFPDCBA
-    .db 0b01101111, 0b00000110, 0b11001011, 0b10001111, 0b10100110, 0b10101101, 0b11101101, 0b00000111  ; 0-7
-    .db 0b11101111, 0b10101111, 0b11100111, 0b11101100, 0b01101001, 0b11001110, 0b11101001, 0b11100001  ; 8-F
-
-;----------------------------------------
-; Display Subroutine (Shift Register Logic)
-;----------------------------------------
-display:
-    push R16
-    push R17
-    in R17, SREG
-    push R17
-
-    ldi R17, 8        ; Loop counter (8 bits to shift)
-shift_loop:
-    rol R16           ; Rotate left through Carry
-    brcs set_ser_1    ; If Carry is set, set SER to 1
-    cbi PORTB, 0      ; Otherwise, set SER (PB0) to 0
-    rjmp clk_pulse
-set_ser_1:
-    sbi PORTB, 0      ; Set SER (PB0) to 1
-clk_pulse:
-    sbi PORTB, 2      ; Set SRCLK high
-    nop               ; Small delay
-    cbi PORTB, 2      ; Set SRCLK low
-    dec R17
-    brne shift_loop
-
-    nop               ; Small delay before latch
-    sbi PORTB, 1      ; Set RCLK high
-    nop               ; Ensure latch holds
-    cbi PORTB, 1      ; Set RCLK low
-
-    pop R17
-    out SREG, R17
-    pop R17
-    pop R16
-    ret
-
-
-*/
