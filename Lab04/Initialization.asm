@@ -4,7 +4,7 @@
 ; Created: 3/27/2025
 ; Author : Moises Gomez
 ;
-; ASM file
+; ASM file to initialize PWM functionality for fan
 ;
 
 .include "m328pdef.inc" 
