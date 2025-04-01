@@ -16,37 +16,43 @@
 .equ E  = PB3  ; Enable pin
 
 .org 0x00  ; Start of program memory
-    rjmp main  ; Jump to main program
+rjmp main  ; Jump to main program
 
 ;=====================================
 ; LCD Initialization Sequence
 ;=====================================
 LCD_Init:
-    rcall _delay_100ms  ; Wait for 100ms
-    
-    ldi r25, 0x30
-    rcall LCD_SendCommand
-    rcall _delay_5ms     ; Wait 5ms
+    ; Wait for 100 ms
+    rcall _delay_100ms  
 
-    ldi r25, 0x30
+    ; Set the device to 8-bit mode (send command 0x3)
+    ldi R25, 0x30
     rcall LCD_SendCommand
-    rcall _delay_200us   ; Wait 200us
+    rcall _delay_5ms      ; Wait for 5 ms
 
-    ldi r25, 0x30
+    ; Set the device to 8-bit mode again (send command 0x3)
+    ldi R25, 0x30
     rcall LCD_SendCommand
-    rcall _delay_200us   ; Wait 200us
+    rcall _delay_200us    ; Wait for 200 µs
 
-    ldi r25, 0x20  ; Set to 4-bit mode
+    ; Set the device to 8-bit mode one last time (send command 0x3)
+    ldi R25, 0x30
     rcall LCD_SendCommand
-    rcall _delay_5ms     ; Wait 5ms
+    rcall _delay_200us    ; Wait for 200 µs
 
-    ldi r25, 0x01  ; Clear display
+    ; Set device to 4-bit mode (send command 0x2)
+    ldi R25, 0x20
     rcall LCD_SendCommand
-    rcall _delay_2ms     ; Wait 1.64ms
+    rcall _delay_5ms      ; Wait for 5 ms
 
-    ldi r25, 0x06  ; Entry mode set
+    ; Further LCD configuration (clear screen, entry mode, etc.)
+    ldi R25, 0x01        ; Clear display command (0x01)
     rcall LCD_SendCommand
-    rcall _delay_40us    ; Wait 40us
+    rcall _delay_2ms      ; Wait for 1.64 ms
+
+    ldi R25, 0x06        ; Entry mode set (0x06)
+    rcall LCD_SendCommand
+    rcall _delay_40us     ; Wait for 40 µs
 
     ret
 
@@ -54,7 +60,7 @@ LCD_Init:
 ; Send Command (RS = 0)
 ;=====================================
 LCD_SendCommand:
-    cbi PORTD, RS  ; RS = 0 (Command mode)
+    cbi PORTB, RS  ; RS = 0 (Command mode)
     rcall LCD_SendNibble
     ret
 
@@ -62,7 +68,7 @@ LCD_SendCommand:
 ; Send Data (RS = 1)
 ;=====================================
 LCD_SendData:
-    sbi PORTD, RS  ; RS = 1 (Data mode)
+    sbi PORTB, RS  ; RS = 1 (Data mode)
     rcall LCD_SendNibble
     ret
 
@@ -70,7 +76,7 @@ LCD_SendData:
 ; Send a Nibble
 ;=====================================
 LCD_SendNibble:
-    out PORTC, r25  ; Send upper or lower nibble to LCD
+    out PORTC, R25  ; Send upper or lower nibble to LCD
     rcall LCDStrobe  ; Pulse E line
     ret
 
@@ -78,68 +84,71 @@ LCD_SendNibble:
 ; Strobe Enable Line
 ;=====================================
 LCDStrobe:
-    sbi PORTD, E    ; Enable high
+    sbi PORTB, E    ; Enable high
     rcall _delay_100us  ; Short delay
-    cbi PORTD, E    ; Enable low
+    cbi PORTB, E    ; Enable low
     ret
 
 ;=====================================
-; Delay Functions Using Timer1
+; Delay Functions Using TimeR1
 ;=====================================
 _delay_100ms:
-    ldi r24, 100
+    ldi R24, 100
 _delay_100ms_loop:
     rcall _delay_1ms
-    dec r24
+    dec R24
     brne _delay_100ms_loop
     ret
 
 _delay_5ms:
-    ldi r24, 5
+    ldi R24, 5
 _delay_5ms_loop:
     rcall _delay_1ms
-    dec r24
+    dec R24
     brne _delay_5ms_loop
     ret
 
 _delay_2ms:
-    ldi r24, 2
+    ldi R24, 2
 _delay_2ms_loop:
     rcall _delay_1ms
-    dec r24
+    dec R24
     brne _delay_2ms_loop
     ret
 
 _delay_1ms:
-    ldi r24, 250
+    ldi R24, 250
 _delay_1ms_loop:
-    sbi TCNT1, 0    ; Start Timer1
-    sbi TCCR1B, CS10 ; Set prescaler
-    sbis TIFR1, TOV1
+    ; sbi TCNT1, 0    ; Start TimeR1
+
+    ldi R18, (1 << CS01) | (1 << CS00)  ; Set prescaler = 64
+    out TCCR0B, R18
+
+    sbis TIFR1, TOV1    ; Wait for overflow
     rjmp _delay_1ms_loop
     ret
 
 _delay_40us:
-    ldi r24, 40
+    ldi R24, 40
 _delay_40us_loop:
-    rcall _delay_1us
-    dec r24
+    rcall _delay_1ms
+    dec R24
     brne _delay_40us_loop
     ret
 
 _delay_200us:
-    ldi r24, 5  ; 5 x 40us = 200us
+    ldi R24, 5  ; 5 x 40us = 200us
 _delay_200us_loop:
     rcall _delay_40us
-    dec r24
+    dec R24
     brne _delay_200us_loop
     ret
 
 _delay_100us:
-    ldi r24, 2
+    ldi R24, 2
 _delay_100us_loop:
     rcall _delay_40us
-    dec r24
+    dec R24
     brne _delay_100us_loop
     ret
 
@@ -148,19 +157,19 @@ _delay_100us_loop:
 ;=====================================
 main:
     ; Set PORTC as output (D4-D7 for LCD data)
-    ldi r16, 0x0F
-    out DDRC, r16
+    ldi R16, 0x0F
+    out DDRC, R16
     
-    ; Set PORTD as output (RS, E)
-    ldi r16, 0x03
-    out DDRD, r16
+    ; Set PORTB as output (RS, E)
+    ldi R16, 0x03
+    out DDRC, R16
     
     rcall LCD_Init  ; Initialize LCD
 
     ; Send character 'E' (0x45)
-    ldi r25, 0x04  ; Upper nibble of 'E'
+    ldi R25, 0x04  ; Upper nibble of 'E'
     rcall LCD_SendData
-    ldi r25, 0x05  ; Lower nibble of 'E'
+    ldi R25, 0x05  ; Lower nibble of 'E'
     rcall LCD_SendData
 
     rjmp main  ; Loop indefinitely
