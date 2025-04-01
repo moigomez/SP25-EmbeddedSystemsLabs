@@ -10,120 +10,157 @@
 
 ; The below is ChatGPT code
 
-.equ RS = 5      ; RS connected to PD0
-.equ E  = 3      ; E connected to PD1
-.equ LCD_PORT = PORTC  ; Data lines connected to PC0-PC3
-.equ CTRL_PORT = PORTB ; Control lines on PD0, PD1
-.equ CTRL_DDR = DDRB
-.equ LCD_DDR = DDRC
+.include "m328Pdef.inc" ; Include device-specific definitions
 
-.include "m328Pdef.inc"
+.equ RS = PB5  ; Register Select pin
+.equ E  = PB3  ; Enable pin
 
-.org 0x00
-rjmp main
+.org 0x00  ; Start of program memory
+    rjmp main  ; Jump to main program
 
-; Subroutine: Delay for approximately 1ms (adjust based on clock)
-_delay_1ms:
-    ldi R18, 250
-    ldi R19, 250
-_delay_1ms_loop:
-    dec R19
-    brne _delay_1ms_loop
-    dec R18
-    brne _delay_1ms_loop
+;=====================================
+; LCD Initialization Sequence
+;=====================================
+LCD_Init:
+    rcall _delay_100ms  ; Wait for 100ms
+    
+    ldi r25, 0x30
+    rcall LCD_SendCommand
+    rcall _delay_5ms     ; Wait 5ms
+
+    ldi r25, 0x30
+    rcall LCD_SendCommand
+    rcall _delay_200us   ; Wait 200us
+
+    ldi r25, 0x30
+    rcall LCD_SendCommand
+    rcall _delay_200us   ; Wait 200us
+
+    ldi r25, 0x20  ; Set to 4-bit mode
+    rcall LCD_SendCommand
+    rcall _delay_5ms     ; Wait 5ms
+
+    ldi r25, 0x01  ; Clear display
+    rcall LCD_SendCommand
+    rcall _delay_2ms     ; Wait 1.64ms
+
+    ldi r25, 0x06  ; Entry mode set
+    rcall LCD_SendCommand
+    rcall _delay_40us    ; Wait 40us
+
     ret
 
-; Subroutine: Generate Enable Pulse (E)
+;=====================================
+; Send Command (RS = 0)
+;=====================================
+LCD_SendCommand:
+    cbi PORTD, RS  ; RS = 0 (Command mode)
+    rcall LCD_SendNibble
+    ret
+
+;=====================================
+; Send Data (RS = 1)
+;=====================================
+LCD_SendData:
+    sbi PORTD, RS  ; RS = 1 (Data mode)
+    rcall LCD_SendNibble
+    ret
+
+;=====================================
+; Send a Nibble
+;=====================================
+LCD_SendNibble:
+    out PORTC, r25  ; Send upper or lower nibble to LCD
+    rcall LCDStrobe  ; Pulse E line
+    ret
+
+;=====================================
+; Strobe Enable Line
+;=====================================
 LCDStrobe:
-    sbi CTRL_PORT, E    ; E = 1
-    nop
-    nop
-    cbi CTRL_PORT, E    ; E = 0
+    sbi PORTD, E    ; Enable high
+    rcall _delay_100us  ; Short delay
+    cbi PORTD, E    ; Enable low
     ret
 
-; Subroutine to send a character to the LCD
-; Input: R24 contains the character to send (e.g., 'E' = 0x45)
-SendCharToLCD:
-    ; Send upper nibble
-    lsr R24            ; Shift out upper nibble to the lower nibble
-    lsr R24
-    lsr R24
-    lsr R24
-    out LCD_PORT, R24  ; Send upper nibble to LCD data lines (PC0-PC3)
-    sbi CTRL_PORT, RS  ; Set RS = 1 (data mode)
-    rcall LCDStrobe    ; Pulse E to latch upper nibble
-
-    ; Send lower nibble
-    swap R24           ; Swap nibbles to bring lower nibble to the upper side
-    out LCD_PORT, R24  ; Send lower nibble to LCD data lines (PC0-PC3)
-    rcall LCDStrobe    ; Pulse E to latch lower nibble
-
-    rcall _delay_1ms   ; Optional: wait for 40 μs for the character to be processed
+;=====================================
+; Delay Functions Using Timer1
+;=====================================
+_delay_100ms:
+    ldi r24, 100
+_delay_100ms_loop:
+    rcall _delay_1ms
+    dec r24
+    brne _delay_100ms_loop
     ret
 
-; Subroutine: Send Command to LCD (4-bit mode)
-LCDCommand:
-    out LCD_PORT, R24   ; Send upper nibble
-    cbi CTRL_PORT, RS   ; RS = 0 (command mode)
-    rcall LCDStrobe     ; Pulse E
-    swap R24            ; Swap nibbles
-    out LCD_PORT, R24   ; Send lower nibble
-    rcall LCDStrobe     ; Pulse E
-    rcall _delay_1ms    ; Wait for command to execute
+_delay_5ms:
+    ldi r24, 5
+_delay_5ms_loop:
+    rcall _delay_1ms
+    dec r24
+    brne _delay_5ms_loop
     ret
 
-; Subroutine: Initialize LCD
-LCDInit:
-    rcall _delay_1ms    ; Wait for 100ms
+_delay_2ms:
+    ldi r24, 2
+_delay_2ms_loop:
     rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-    rcall _delay_1ms
-
-    ldi R24, 0x30       ; Function set: 8-bit mode
-    rcall LCDCommand
-    rcall _delay_1ms
-
-    ldi R24, 0x30
-    rcall LCDCommand
-    rcall _delay_1ms
-
-    ldi R24, 0x30
-    rcall LCDCommand
-    rcall _delay_1ms
-
-    ldi R24, 0x20       ; Set to 4-bit mode
-    rcall LCDCommand
-    rcall _delay_1ms
-
-    ; Now configure the LCD
-    ldi R24, 0x28       ; 4-bit, 2-line, 5x8 dots
-    rcall LCDCommand
-    ldi R24, 0x0C       ; Display ON, cursor OFF, blink OFF
-    rcall LCDCommand
-    ldi R24, 0x06       ; Entry mode: Increment, no shift
-    rcall LCDCommand
-    ldi R24, 0x01       ; Clear display
-    rcall LCDCommand
-    rcall _delay_1ms    ; Wait for clear display (1.64ms)
+    dec r24
+    brne _delay_2ms_loop
     ret
 
+_delay_1ms:
+    ldi r24, 250
+_delay_1ms_loop:
+    sbi TCNT1, 0    ; Start Timer1
+    sbi TCCR1B, CS10 ; Set prescaler
+    sbis TIFR1, TOV1
+    rjmp _delay_1ms_loop
+    ret
+
+_delay_40us:
+    ldi r24, 40
+_delay_40us_loop:
+    rcall _delay_1us
+    dec r24
+    brne _delay_40us_loop
+    ret
+
+_delay_200us:
+    ldi r24, 5  ; 5 x 40us = 200us
+_delay_200us_loop:
+    rcall _delay_40us
+    dec r24
+    brne _delay_200us_loop
+    ret
+
+_delay_100us:
+    ldi r24, 2
+_delay_100us_loop:
+    rcall _delay_40us
+    dec r24
+    brne _delay_100us_loop
+    ret
+
+;=====================================
 ; Main Program
+;=====================================
 main:
-    ldi R16, (1 << RS) | (1 << E)  ; Set RS and E as outputs
-    out CTRL_DDR, R16
-    ldi R16, 0x0F
-    out LCD_DDR, R16
+    ; Set PORTC as output (D4-D7 for LCD data)
+    ldi r16, 0x0F
+    out DDRC, r16
+    
+    ; Set PORTD as output (RS, E)
+    ldi r16, 0x03
+    out DDRD, r16
+    
+    rcall LCD_Init  ; Initialize LCD
 
-    rcall LCDInit      ; Initialize LCD
+    ; Send character 'E' (0x45)
+    ldi r25, 0x04  ; Upper nibble of 'E'
+    rcall LCD_SendData
+    ldi r25, 0x05  ; Lower nibble of 'E'
+    rcall LCD_SendData
 
-    ldi R24, 0x45      ; ASCII 'E'
-    rcall LCDCommand   ; Send 'E'
-
-loop:
-    rjmp loop          ; Infinite loop
+    rjmp main  ; Loop indefinitely
