@@ -18,6 +18,9 @@ sts PCMSK0, R16                          ; Set mask register
 ldi R16, (1 << PCIE0)                   ; Enable pin change interrupt for PCINT[7:0]
 sts PCICR, R16                           ; Enable pin change interrupt control register
 
+ldi R18, (1 << PD5)  ; Load value with bit 5 set
+out DDRD, R18        ; Set PB5 as output
+
 sei   ; Enable global interrupts
 
 ISR_PCINT0:
@@ -43,12 +46,12 @@ Check_B:
 
 CW_Rot:
     ; Handle clockwise rotation
-    sbi DDRD, 5 
+    sbi PORTD, 5 
     rjmp Done
 
 CCW_Rot:
     ; Handle counter-clockwise rotation
-    cbi DDRD, 5 
+    cbi PORTD, 5 
     rjmp Done
 
 Done:
