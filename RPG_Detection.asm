@@ -37,9 +37,9 @@ main_loop:
 	cpi R20, 3        ; if (R20 != 3) {
 	brne main_loop    ; }
 	cpi R22, 1        ; else if (R22 == 1) {
-	breq increment    ;     R19++
+	breq clockwise    ;     R19++
 	cpi R22, 2        ; } else if (R22 == 2) }
-	breq decrement    ;     R19--
+	breq counterclockwise    ;     R19--
                       ; }
 rjmp main_loop  
 
@@ -47,23 +47,12 @@ rjmp main_loop
 ;----------------------------------------
 ; Helper Subroutines
 ;----------------------------------------
-increment:
+clockwise:
     sbi PORTD, 5
-
-    ; Make sure counter has not reached max value
-	cpi R19, 15       ; if (R19 >= 15) {
-	brge main_loop    ; } else {
-	inc R19           ;     R19++
-    rjmp main_loop    ; }
-decrement:
+    rjmp main_loop
+counterclockwise:
     cbi PORTD, 5
-
-    ; Make sure counter has not reached min value
-	cpi R19, 0        ; if (R19 == 0) {
-	breq main_loop    ; } else {
-	dec R19           ;     R19--
-	rjmp main_loop    ; }
-
+	rjmp main_loop
 
 ;----------------------------------------
 ; RPG Subroutines
