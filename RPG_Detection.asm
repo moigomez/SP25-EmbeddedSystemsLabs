@@ -18,10 +18,11 @@
 ;----------------------------------------
 cbi DDRB, 4       ; PB4 (RPG A) - Input
 cbi DDRB, 5       ; PB5 (RPG B) - Input
-sbi DDRD, 5       ; PD5 - Output
 
 sbi PORTB, 4      ; Enable pull-up on PB4
 sbi PORTB, 5      ; Enable pull-up on PB5
+
+sbi DDRD, 5       ; PD5 (Test) - Output
 
 clr R19
 
@@ -29,7 +30,6 @@ clr R19
 ; Main Program Loop
 ;----------------------------------------
 main_loop:
-
 	ldi R22, 0
     rcall read_RPG_direction 
 
@@ -41,12 +41,6 @@ main_loop:
 	cpi R22, 2        ; } else if (R22 == 2) }
 	breq decrement    ;     R19--
                       ; }
-
-    ;cpi R22, 1
-    ;brne main_loop
-
-    
-
 rjmp main_loop  
 
 
@@ -54,18 +48,26 @@ rjmp main_loop
 ; Helper Subroutines
 ;----------------------------------------
 increment:
+    sbi PORTD, 5
+
     ; Make sure counter has not reached max value
 	cpi R19, 15       ; if (R19 >= 15) {
 	brge main_loop    ; } else {
 	inc R19           ;     R19++
     rjmp main_loop    ; }
 decrement:
+    cbi PORTD, 5
+
     ; Make sure counter has not reached min value
 	cpi R19, 0        ; if (R19 == 0) {
 	breq main_loop    ; } else {
 	dec R19           ;     R19--
 	rjmp main_loop    ; }
 
+
+;----------------------------------------
+; RPG Subroutines
+;----------------------------------------
 read_RPG_direction:
     ; Read A and B, shifting A into bit 1, B into bit 0 -> Current state
     clr R21              ; Clear temporary register
@@ -105,11 +107,9 @@ read_RPG_direction:
     rjmp updateState     ; No valid movement, update last state
 RPG_rotated_CW:
 	ldi R22, 1
-    sbi PORTD, 5
     rjmp updateState
 RPG_rotated_CCW:
 	ldi R22, 2
-    cbi PORTD, 5
     rjmp updateState
 updateState:
     mov R20, R21         ; Save current state as previous
