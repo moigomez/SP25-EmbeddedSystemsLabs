@@ -13,10 +13,10 @@
 .include "m328pdef.inc"
 
 ; Enable PCINT on PB4 and PB5 (PCINT4 & PCINT5)
-cbi DDRB, 4         ; PB4 (RPG A) - Input
-cbi DDRB, 5         ; PB5 (RPG B) - Input
-sbi PORTB, 4        ; Enable pull-up
-sbi PORTB, 5        ; Enable pull-up
+cbi DDRB, 0         ; PB0 (RPG A) - Input
+cbi DDRB, 1         ; PB1 (RPG B) - Input
+sbi PORTB, 0        ; Enable pull-up
+sbi PORTB, 1        ; Enable pull-up
 
 sbi DDRD, 5         ; PD5 (Test) - Output
 
@@ -24,7 +24,7 @@ sbi DDRD, 5         ; PD5 (Test) - Output
 ldi R24, (1 << PCIE0)  ; Enable PCINT[7:0]
 sts PCICR, R24
 
-; Enable PCINT4 and PCINT5
+; Enable PCINT0 and PCINT1
 ldi R24, (1 << PCINT0) | (1 << PCINT1)
 sts PCMSK0, R24
 
@@ -32,13 +32,6 @@ sei   ; Enable global interrupts
 
 main_loop:
     rjmp main_loop
-
-clockwise:
-    sbi PORTD, 5
-    rjmp main_loop
-counterclockwise:
-    cbi PORTD, 5
-	rjmp main_loop
 
 ; Interrupt Service Routine for Rotary Encoder (PCINT0)
 RPG_ISR:
@@ -64,9 +57,9 @@ RPG_DONE:
 
 read_RPG_direction:
     clr R21              ; Clear temporary register
-    sbic PINB, 4         ; If PB4 (RPG A) is high, set bit 1
+    sbic PINB, 0         ; If PB0 (RPG A) is high, set bit 1
     ori R21, (1 << 1)
-    sbic PINB, 5         ; If PB5 (RPG B) is high, set bit 0
+    sbic PINB, 1         ; If PB1 (RPG B) is high, set bit 0
     ori R21, (1 << 0)
 
     ; Compare current state (R21) with previous state (R20)
@@ -110,3 +103,10 @@ updateState:
     mov R20, R21         ; Save current state as previous
 read_complete:
     ret
+
+clockwise:
+    sbi PORTD, 5
+    rjmp RPG_DONE
+counterclockwise:
+    cbi PORTD, 5
+	rjmp RPG_DONE
