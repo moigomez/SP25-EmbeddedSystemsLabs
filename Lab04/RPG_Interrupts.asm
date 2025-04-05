@@ -12,47 +12,101 @@
 
 .include "m328pdef.inc"
 
-; Enable Pin Change Interrupt for PB0 (PCINT8) and PB1 (PCINT9)
-ldi R16, (1 << PCINT8) | (1 << PCINT9)  ; Enable PCINT8 and PCINT9
-sts PCMSK0, R16                          ; Set mask register
-ldi R16, (1 << PCIE0)                   ; Enable pin change interrupt for PCINT[7:0]
-sts PCICR, R16                           ; Enable pin change interrupt control register
+; Enable PCINT on PB4 and PB5 (PCINT4 & PCINT5)
+cbi DDRB, 4         ; PB4 (RPG A) - Input
+cbi DDRB, 5         ; PB5 (RPG B) - Input
+sbi PORTB, 4        ; Enable pull-up
+sbi PORTB, 5        ; Enable pull-up
 
-ldi R18, (1 << PD5)  ; Load value with bit 5 set
-out DDRD, R18        ; Set PB5 as output
+sbi DDRD, 5         ; PD5 (Test) - Output
+
+; Enable Pin Change Interrupts
+ldi R24, (1 << PCIE0)  ; Enable PCINT[7:0]
+sts PCICR, R24
+
+; Enable PCINT4 and PCINT5
+ldi R24, (1 << PCINT0) | (1 << PCINT1)
+sts PCMSK0, R24
 
 sei   ; Enable global interrupts
 
-ISR_PCINT0:
-    in R16, PINB      ; Read PINB (current state of A and B)
-    mov R17, R16      ; Copy for comparison
+main_loop:
+    rjmp main_loop
 
-    sbrs R16, PB0     ; Check if A is HIGH (skip next if set)
-    rjmp Check_B      ; If A is LOW, check B next
+clockwise:
+    sbi PORTD, 5
+    rjmp main_loop
+counterclockwise:
+    cbi PORTD, 5
+	rjmp main_loop
 
-    ; If A is HIGH, check previous state of B
-    sbrc R17, PB1     ; If B was HIGH before
-    rjmp CW_Rot       ; Clockwise rotation
-    rjmp CCW_Rot      ; Counter-clockwise rotation
+; Interrupt Service Routine for Rotary Encoder (PCINT0)
+RPG_ISR:
+    push R20
+    push R21
+    push R22
 
-Check_B:
-    sbrs R16, PB1     ; Check if B is HIGH (skip next if set)
-    rjmp Done         ; If B is LOW, ignore (no rotation)
+    rcall read_RPG_direction  ; Reuse your existing function
 
-    ; If B is HIGH, check previous state of A
-    sbrc R17, PB0     ; If A was HIGH before
-    rjmp CCW_Rot      ; Counter-clockwise rotation
-    rjmp CW_Rot       ; Clockwise rotation
+    ; Check if RPG is resting on detent and update count accordingly
+    cpi R20, 3
+    brne RPG_DONE
+    cpi R22, 1
+    breq clockwise
+    cpi R22, 2
+    breq counterclockwise
 
-CW_Rot:
-    ; Handle clockwise rotation
-    sbi PORTD, 5 
-    rjmp Done
+RPG_DONE:
+    pop R22
+    pop R21
+    pop R20
+    reti  ; Return from interrupt
 
-CCW_Rot:
-    ; Handle counter-clockwise rotation
-    cbi PORTD, 5 
-    rjmp Done
+read_RPG_direction:
+    clr R21              ; Clear temporary register
+    sbic PINB, 4         ; If PB4 (RPG A) is high, set bit 1
+    ori R21, (1 << 1)
+    sbic PINB, 5         ; If PB5 (RPG B) is high, set bit 0
+    ori R21, (1 << 0)
 
-Done:
-    reti
+    ; Compare current state (R21) with previous state (R20)
+    cp R21, R20
+    breq read_complete    ; If no change, exit
+
+    ; Encode previous + current state into 4 bits (2-bit shift)
+    lsl R20
+    lsl R20
+    or R20, R21           ; Combine with new state
+
+    ; Check transition pattern using known quadrature sequences
+    cpi R20, 0b0001
+    breq RPG_rotated_CCW
+    cpi R20, 0b0111
+    breq RPG_rotated_CCW
+    cpi R20, 0b1110
+    breq RPG_rotated_CCW
+    cpi R20, 0b1000
+    breq RPG_rotated_CCW
+
+    cpi R20, 0b0010
+    breq RPG_rotated_CW
+    cpi R20, 0b0100
+    breq RPG_rotated_CW
+    cpi R20, 0b1101
+    breq RPG_rotated_CW
+    cpi R20, 0b1011
+    breq RPG_rotated_CW
+
+    rjmp updateState     ; No valid movement, update last state
+RPG_rotated_CW:
+    ldi R22, 1           ; Clockwise rotation detected
+    rjmp updateState
+
+RPG_rotated_CCW:
+    ldi R22, 2           ; Counterclockwise rotation detected
+    rjmp updateState
+
+updateState:
+    mov R20, R21         ; Save current state as previous
+read_complete:
+    ret
