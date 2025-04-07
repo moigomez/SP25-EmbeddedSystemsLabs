@@ -8,27 +8,51 @@
 ; detection using interrupts
 ;
 
-; The below is ChatGPT code
+; The below is tweaked ChatGPT code
 
 .include "m328pdef.inc"
 
-; Enable PCINT on PB4 and PB5 (PCINT4 & PCINT5)
-cbi DDRB, 0         ; PB0 (RPG A) - Input
-cbi DDRB, 1         ; PB1 (RPG B) - Input
-sbi PORTB, 0        ; Enable pull-up
-sbi PORTB, 1        ; Enable pull-up
 
-sbi DDRD, 5         ; PD5 (Test) - Output
+.equ RPG_A = 0         ; PB0 (RPG A, PCINT0)
+.equ RPG_B = 1         ; PB1 (RPG B, PCINT1)
+.equ TEST_PIN = 5      ; PD5 (Test output)
 
-; Enable Pin Change Interrupts
-ldi R24, (1 << PCIE0)  ; Enable PCINT[7:0]
-sts PCICR, R24
+.org 0x0000
+rjmp RESET         ; Reset vector (or main init label)
+.org 0x0006
+rjmp RPG_ISR       ; Pin Change Interrupt 0 vector
 
-; Enable PCINT0 and PCINT1
-ldi R24, (1 << PCINT0) | (1 << PCINT1)
-sts PCMSK0, R24
+RESET:
+    ldi R16, low(RAMEND)
+    out SPL, R16
+    ldi R16, high(RAMEND)
+    out SPH, R16
+    ; Enable PCINT on PB0 and PB1 (PCINT0 & PCINT1)
+    cbi DDRB, RPG_A         ; PB0 (RPG A) - Input
+    cbi DDRB, RPG_B         ; PB1 (RPG B) - Input
+    sbi PORTB, RPG_A        ; Enable pull-up
+    sbi PORTB, RPG_B        ; Enable pull-up
 
-sei   ; Enable global interrupts
+    sbi DDRD, TEST_PIN         ; PD5 (Test) - Output
+
+    ; Enable Pin Change Interrupts
+    ldi R24, (1 << PCIE0)  ; Enable PCINT[7:0]
+    sts PCICR, R24
+
+
+    ; Initialize previous RPG state (R20)
+    clr R21
+    sbic PINB, RPG_A
+    ori R21, (1 << 1)
+    sbic PINB, RPG_B
+    ori R21, (1 << 0)
+    mov R20, R21
+
+    ; Enable PCINT0 and PCINT1
+    ldi R24, (1 << PCINT0) | (1 << PCINT1)
+    sts PCMSK0, R24
+
+    sei   ; Enable global interrupts
 
 main_loop:
     rjmp main_loop
@@ -57,19 +81,19 @@ RPG_DONE:
 
 read_RPG_direction:
     clr R21              ; Clear temporary register
-    sbic PINB, 0         ; If PB0 (RPG A) is high, set bit 1
+    sbic PINB, RPG_A         ; If PB0 (RPG A) is high, set bit 1
     ori R21, (1 << 1)
-    sbic PINB, 1         ; If PB1 (RPG B) is high, set bit 0
+    sbic PINB, RPG_B         ; If PB1 (RPG B) is high, set bit 0
     ori R21, (1 << 0)
 
     ; Compare current state (R21) with previous state (R20)
     cp R21, R20
-    breq read_complete    ; If no change, exit
+    breq read_complete
 
     ; Encode previous + current state into 4 bits (2-bit shift)
     lsl R20
     lsl R20
-    or R20, R21           ; Combine with new state
+    or R20, R21
 
     ; Check transition pattern using known quadrature sequences
     cpi R20, 0b0001
@@ -90,13 +114,13 @@ read_RPG_direction:
     cpi R20, 0b1011
     breq RPG_rotated_CW
 
-    rjmp updateState     ; No valid movement, update last state
+    rjmp updateState
 RPG_rotated_CW:
-    ldi R22, 1           ; Clockwise rotation detected
+    ldi R22, 1
     rjmp updateState
 
 RPG_rotated_CCW:
-    ldi R22, 2           ; Counterclockwise rotation detected
+    ldi R22, 2
     rjmp updateState
 
 updateState:
@@ -105,8 +129,8 @@ read_complete:
     ret
 
 clockwise:
-    sbi PORTD, 5
+    sbi PORTD, TEST_PIN
     rjmp RPG_DONE
 counterclockwise:
-    cbi PORTD, 5
+    cbi PORTD, TEST_PIN
 	rjmp RPG_DONE
