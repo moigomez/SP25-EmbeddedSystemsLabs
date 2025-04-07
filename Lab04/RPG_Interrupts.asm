@@ -8,19 +8,14 @@
 ; detection using interrupts
 ;
 
-; The below is ChatGPT code
-
 .include "m328pdef.inc"
 
 .equ RPG_A = 0        ; PB0 - PCINT0
 .equ RPG_B = 1        ; PB1 - PCINT1
-.equ TEST_PIN = 5        ; PD5 - for direction test output (e.g. LED)
+.equ TEST_PIN = 5     ; PD5 - Testing purposes
 
-.def rCurr = R16      ; Current state of A/B
-.def rTemp = R17      ; Temp for shift/merge
-.def rTrans = R18      ; 4-bit transition value
-.def rPrev = R19      ; Previous state of A/B
-.def rDir = R20      ; Direction/position counter
+.def regPrevious = R19
+.def regCurrent = R16
 
 .org 0x0000
 rjmp RESET         ; Reset vector (or main init label)
@@ -41,64 +36,68 @@ RESET:
     sbi DDRD, TEST_PIN         ; PD5 (Test) - Output
 
     ldi R16, (1 << PCINT0) | (1 << PCINT1)
-    sts PCMSK0, R16       ; Enable PCINT0 & PCINT1
+    sts PCMSK0, R16
     ldi R16, (1 << PCIE0)
-    sts PCICR, R16        ; Enable Pin Change Interrupt group 0
+    sts PCICR, R16
 
-    clr rCurr
-    clr rPrev
-    clr rDir
+    clr regPrevious
+    clr regCurrent
 
     sbic PINB, RPG_A
-    ori rPrev, (1 << 1)   ; Save A to bit 1
+    ori regPrevious, (1 << 1)   ; Save A to bit 1
     sbic PINB, RPG_B
-    ori rPrev, (1 << 0)   ; Save B to bit 0
+    ori regPrevious, (1 << 0)   ; Save B to bit 0
 
-    sei   ; Enable global interrupts
+    sei
 
 main_loop:
-    rjmp main_loop        ; Infinite loop
+    rjmp main_loop
 
 RPG_ISR:
     ; Get current state
-    in  rCurr, PINB
-    andi rCurr, 0x03          ; Mask for PB0 and PB1 (bits 1:0)
+    in  regCurrent, PINB
+    andi regCurrent, 3      ; Mask for PB0 and PB1 (bits 1:0)
 
-    ; Build transition: (rPrev << 2) | rCurr
-    mov rTemp, rPrev
-    lsl rTemp                 ; Shift left twice
-    lsl rTemp
-    or  rTemp, rCurr          ; Combine into transition
-    mov rTrans, rTemp
+    mov R21, R19
+    lsl R21                 ; Shift left twice
+    lsl R21
+    or  R21, R16
+    mov R20, R21
 
-    cpi rTrans, 0b0001
+    cpi R20, 0b0001
     breq clockwise
-    cpi rTrans, 0b0111
+    cpi R20, 0b0111
     breq clockwise
-    cpi rTrans, 0b1110
+    cpi R20, 0b1110
     breq clockwise
-    cpi rTrans, 0b1000
+    cpi R20, 0b1000
     breq clockwise
 
-    cpi rTrans, 0b0010
+    cpi R20, 0b0010
     breq counterclockwise
-    cpi rTrans, 0b1011
+    cpi R20, 0b1011
     breq counterclockwise
-    cpi rTrans, 0b1101
+    cpi R20, 0b1101
     breq counterclockwise
-    cpi rTrans, 0b0100
+    cpi R20, 0b0100
     breq counterclockwise
 
-    rjmp save_state          ; If no match, just save and exit
-clockwise:
-    inc rDir
-    sbi PORTD, TEST_PIN      ; Turn on test pin
     rjmp save_state
+clockwise:
+    inc R23
+    cpi R23, 4              ; if (R23 == 4) {
+    brne save_state         ;
+    clr R23                 ; 
+    sbi PORTD, TEST_PIN     ;     PD5.high() 
+    rjmp save_state         ; }
 
 counterclockwise:
-    dec rDir
-    cbi PORTD, TEST_PIN      ; Turn off test pin
-
+    inc R23              
+    cpi R23, 4              ; if (R23 == 4) {
+    brne save_state         ;
+    clr R23                 ;
+    cbi PORTD, TEST_PIN     ;     PD5.low()
+                            ; }
 save_state:
-    mov rPrev, rCurr
+    mov regPrevious, regCurrent
     reti
