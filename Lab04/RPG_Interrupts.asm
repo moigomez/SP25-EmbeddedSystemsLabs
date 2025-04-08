@@ -88,6 +88,7 @@ clockwise:
     cpi R23, 4              ; if (R23 == 4) {
     brne save_state         ;
     clr R23                 ; 
+
     sbi PORTD, TEST_PIN     ;     PD5.high() 
     rjmp save_state         ; }
 
@@ -96,6 +97,7 @@ counterclockwise:
     cpi R23, 4              ; if (R23 == 4) {
     brne save_state         ;
     clr R23                 ;
+    
     cbi PORTD, TEST_PIN     ;     PD5.low()
                             ; }
 save_state:
