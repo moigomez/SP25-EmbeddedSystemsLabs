@@ -5,7 +5,7 @@
 ; Author : Moises Gomez
 ;
 ; ASM file incorporating all required functionality
-; of Lab04. 
+; of Lab04.
 ;
 ; This code:
 ; 1. Uses an RPG encoder to increase/decrease the duty cycle of the PWM for controlling fan speed.
@@ -16,11 +16,11 @@
 /* === PWM + RPG === */
 
 ; REGISTERS
-; 
+;
 ; R16 - Stores the current state of the RPG; Also serves
 ;       as temporary register for configuring PCIs          (regCurrent)
 ; R17 - Stores the value of the duty cycle (OCR0B)          (regDutyCycle)
-; R18 - Temporary register configuring PWM 
+; R18 - Temporary register configuring PWM
 ; R19 - Stores the previous state of the RPG                (regPrevious)
 ; R20 - Temporary register storing RPG transition states    (regTransitions)
 ; R21 - Temporary register for 'building' RPG transitions
@@ -28,11 +28,11 @@
 ;
 
 
-.include "m328pdef.inc" 
+.include "m328pdef.inc"
 
-.equ RPG_A = 0        ; PB0 - PCINT0
-.equ RPG_B = 1        ; PB1 - PCINT1
-.equ TEST_PIN = 6     ; PD6 - Testing purposes
+.equ RPG_A = 0                  ; PB0 - PCINT0
+.equ RPG_B = 1                  ; PB1 - PCINT1
+.equ TEST_PIN = 6               ; PD6 - Testing purposes
 
 .def regTransitions = R20
 .def regPrevious = R19
@@ -62,6 +62,7 @@ RESET:
     clr regPrevious
     clr regCurrent
     clr regTransitions
+    clr R22
 
     sbic PINB, RPG_A
     ori regPrevious, (1 << 1)   ; Save A to bit 1
@@ -76,10 +77,10 @@ main_loop:
 RPG_ISR:
     ; Get current state
     in regCurrent, PINB
-    andi regCurrent, 3      ; Mask for PB0 and PB1 (bits 1:0)
+    andi regCurrent, 3          ; Mask for PB0 and PB1 (bits 1:0)
 
     mov R21, regPrevious
-    lsl R21                 ; Shift left twice
+    lsl R21                     ; Shift left twice
     lsl R21
     or  R21, regCurrent
     mov regTransitions, R21
@@ -104,31 +105,32 @@ RPG_ISR:
 
     rjmp save_state
 clockwise:
-    inc R22
-    cpi R22, 4              ; if (R22 == 4) {
-    brne save_state         ;
-    clr R22                 ; 
-
-    inc regDutyCycle
-    ;sbi PORTD, TEST_PIN    ;     PD6.high() 
-    rjmp save_state         ; }
+    cpi regDutyCycle, 99        ; if (regDutyCycle >= 99) {
+    brsh save_state             ;     save_state()
+                                ; } else {
+    inc R22                     ;     R22++
+    inc regDutyCycle            ;     regDutyCycle++
+    rcall pwm_start             ;     pwm_start()
+                                ; }
+    ;sbi PORTD, TEST_PIN
+    rjmp save_state
 
 counterclockwise:
-    inc R22              
-    cpi R22, 4              ; if (R22 == 4) {
-    brne save_state         ;
-    clr R22                 ;
-    
-    dec regDutyCycle
-    ;cbi PORTD, TEST_PIN    ;     PD6.low()
-                            ; }
+    cpi regDutyCycle, 0         ; if (regDutyCycle == 0) {
+    breq save_state             ;     save_state()
+                                ; } else {
+    inc R22                     ;     R22++
+    dec regDutyCycle            ;     regDutyCycle--
+    rcall pwm_start             ;     pwm_start()
+                                ; }
+    ;cbi PORTD, TEST_PIN
 save_state:
     mov regPrevious, regCurrent
     reti
 
 pwm_start:
-    ; Set PD6 (OC0B) as output
-    sbi DDRD, 5  
+    out OCR0B, regDutyCycle
+    sbi DDRD, 5                                             ; Set PD6 (OC0B) as output
 
     ; Configure Timer0
     ldi R18, (1 << WGM01) | (1 << WGM00) | (1 << COM0B1)    ; Set Fast PWM and non-inverting mode
@@ -141,9 +143,12 @@ pwm_start:
     ldi R18, 99
     out OCR0A, R18
 
-    ;ldi R17, 49
-    out OCR0B, regDutyCycle
-
+    cpi R22, 4                  ; if (R22 != 4) {
+    brne end                    ;     end()
+    clr R22                     ; } else {
+    out OCR0B, regDutyCycle     ;     OCR0B = regDutyCycle
+                                ; }
+    end:
     ret
 
 /* ===============++ */
