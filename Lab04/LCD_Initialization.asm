@@ -14,27 +14,21 @@
 .include "m328pdef.inc"
 
 ; Define constants
-.equ F_CPU = 1000000            ; 1 MHz clock frequency (assuming CKDIV8 programmed)
 .equ LCD_RS = 5                 ; PB5 (Register Select, Arduino D13)
 .equ LCD_E  = 3                 ; PB3 (Enable, Arduino D11)
-.equ LCD_D4 = 0                 ; PC0 (Data 4, Arduino A0)
-.equ LCD_D5 = 1                 ; PC1 (Data 5, Arduino A1)
-.equ LCD_D6 = 2                 ; PC2 (Data 6, Arduino A2)
-.equ LCD_D7 = 3                 ; PC3 (Data 7, Arduino A3)
 .equ BUTTON_PIN = 2             ; PD2 (Pushbutton, INT0, Arduino D2)
 .equ FAN_PIN = 5                ; PD5 (Cooling Fan, Arduino D5)
-.equ DEBUG_LED = 7              ; PD7 (Debug LED, Arduino D7)
 
-; LCD Commands (from Slide 40)
+; LCD Commands
 .equ LCD_CLEAR      = 0x01
 .equ LCD_ENTRY_MODE = 0x06      ; Increment cursor, no display shift
 .equ LCD_DISPLAY_ON = 0x0C      ; Display on, cursor off, blink off
 .equ LCD_FUNCTION_SET = 0x28    ; 4-bit mode, 2 lines, 5x8 font
 .equ LCD_SET_DDRAM  = 0x80      ; Base address for DDRAM (add offset for position)
 
- .def regDutyCycle = R19  ; New register for duty cycle display (0-100)
+ .def regTestNumber = R19
 
-; Data segment (for variables)
+; Data segment
 .dseg
 .org SRAM_START
 fan_state: .byte 1              ; 0 = off, 1 = on
@@ -43,9 +37,9 @@ update_flag: .byte 1            ; Flag to indicate LCD update needed (0 = no upd
 ; Code segment
 .cseg
 .org 0x0000
-rjmp RESET          ; Reset vector
+rjmp RESET
 .org 0x0002
-rjmp INT0_ISR      ; External Interrupt 0 vector (INT0 on PD2)
+rjmp INT0_ISR
 
 RESET:
     ; Initialize stack pointer
@@ -57,16 +51,13 @@ RESET:
     ; Set up I/O pins
     sbi DDRB, LCD_RS            ; PB5 as output (LCD RS)
     sbi DDRB, LCD_E             ; PB3 as output (LCD E)
-    sbi DDRC, LCD_D4            ; PC0 as output (LCD D4)
-    sbi DDRC, LCD_D5            ; PC1 as output (LCD D5)
-    sbi DDRC, LCD_D6            ; PC2 as output (LCD D6)
-    sbi DDRC, LCD_D7            ; PC3 as output (LCD D7)
+    sbi DDRC, 0                 ; PC0 as output (LCD D4)
+    sbi DDRC, 1                 ; PC1 as output (LCD D5)
+    sbi DDRC, 2                 ; PC2 as output (LCD D6)
+    sbi DDRC, 3                 ; PC3 as output (LCD D7)
     sbi DDRD, FAN_PIN           ; PD5 as output (Cooling Fan)
     cbi DDRD, BUTTON_PIN        ; PD2 as input (Pushbutton, INT0)
     sbi PORTD, BUTTON_PIN       ; Enable pull-up resistor on PD2
-
-    sbi DDRD, DEBUG_LED         ; PD7 as output (Debug LED)
-    cbi PORTD, DEBUG_LED        ; Start with LED off
 
     ; Clear PORTC, PORTB, and PORTD to a known state
     ldi R16, 0x00
@@ -79,7 +70,7 @@ RESET:
     sts fan_state, R16
     sts update_flag, R16        ; Clear update flag
 
-    ldi regDutyCycle, 50
+    ldi regTestNumber, 75       ; Load arbitrary number to display on LCD
 
     ; Set up External Interrupt INT0 on PD2
     ldi R16, 0                  ; ISC01=0, ISC00=0: Low level on INT0 triggers interrupt
@@ -109,7 +100,6 @@ main_loop:
 main_loop_no_update:
     rjmp main_loop
 
-; Interrupt Service Routine for INT0 (PD2)
 INT0_ISR:
     push R16
     in R16, SREG
@@ -119,12 +109,6 @@ INT0_ISR:
     ; Disable INT0 to prevent repeated triggers while button is pressed
     ldi R16, 0
     out EIMSK, R16
-
-    ; Debug: Toggle PD7 to confirm ISR is triggering
-    in R17, PORTD
-    ldi R16, (1<<DEBUG_LED)
-    eor R17, R16
-    out PORTD, R17
 
     ; Toggle fan state
     lds R16, fan_state
@@ -144,8 +128,6 @@ set_update_flag:
     ldi R16, 1
     sts update_flag, R16
 
-wait_release:
-    ; Wait for button to be released (PD2 goes high)
 wait_loop:
     in R16, PIND
     andi R16, (1<<BUTTON_PIN)
@@ -163,7 +145,7 @@ isr_exit:
     pop R16
     reti
 
-/* ******* DISPLAY TEXT ON LCD ******* /
+/* ******* DISPLAY TEXT ON LCD ****** */
 
 ; Display fan state
 
@@ -171,7 +153,7 @@ display_fan_state:
     push R16
     push R17
     push R18
-    push R19  ; Preserve regDutyCycle (R19)
+    push R19  ; Preserve regTestNumber (R19)
 
     ; Clear display
     ldi R16, LCD_CLEAR
@@ -191,8 +173,8 @@ display_fan_state:
     ldi R16, '='
     rcall lcd_data
 
-    ; Convert regDutyCycle to ASCII and display
-    mov R16, regDutyCycle  ; Load duty cycle (0-100)
+    ; Convert regTestNumber to ASCII and display
+    mov R16, regTestNumber  ; Load duty cycle (0-100)
     ; Extract tens digit
     ldi R17, 10
     clr R18              ; Clear remainder
@@ -202,21 +184,21 @@ div_tens:
     inc R18
     rjmp div_tens
 tens_done:
-    add R16, R17         ; Add back the last subtraction
-    mov R19, R16         ; Save ones digit in R19 (temporary, not regDutyCycle)
-    mov R16, R18         ; Move tens digit to R16
-    cpi R16, 0           ; If tens digit is 0, display space (for 0-9)
+    add R16, R17                ; Add back the last subtraction
+    mov R19, R16                ; Save ones digit in R19 (temporary, not regTestNumber)
+    mov R16, R18                ; Move tens digit to R16
+    cpi R16, 0                  ; If tens digit is 0, display space (for 0-9)
     breq display_space
-    subi R16, -48        ; Convert to ASCII ('0' = 48)
+    subi R16, -48               ; Convert to ASCII ('0' = 48)
     rjmp display_tens
 display_space:
-    ldi R16, ' '         ; Display space for single-digit numbers
+    ldi R16, ' '                ; Display space for single-digit numbers
 display_tens:
     rcall lcd_data
 
     ; Display ones digit
     mov R16, R19
-    subi R16, -48        ; Convert to ASCII
+    subi R16, -48               ; Convert to ASCII
     rcall lcd_data
 
     ; Display ".0%"
@@ -266,13 +248,13 @@ display_off:
     rcall lcd_data
 
 display_end:
-    pop R19  ; Restore regDutyCycle (R19)
+    pop R19  ; Restore regTestNumber (R19)
     pop R18
     pop R17
     pop R16
     ret
 
-/* ******* INITIALIZE LCD ******* /
+/* ******* INITIALIZE LCD ****** */
 
 lcd_init:
     ; Wait for LCD to power up (1000 ms = 250 ms * 4)
@@ -288,15 +270,15 @@ lcd_init:
     ; Step 1: Set to 8-bit mode (D7-D4 = 0x03)
     ldi R16, 0x03
     in R17, PORTC
-    andi R17, 0xF0     ; Clear PC0-PC3 (D4-D7)
-    or R17, R16        ; Set D7-D4 on PC3-PC0
+    andi R17, 0xF0              ; Clear PC0-PC3 (D4-D7)
+    or R17, R16                 ; Set D7-D4 on PC3-PC0
     out PORTC, R17
-    cbi PORTB, LCD_RS  ; RS = 0 for command
+    cbi PORTB, LCD_RS           ; RS = 0 for command
     sbi PORTB, LCD_E
-    ldi R16, 10        ; 10 ms for Enable pulse
+    ldi R16, 10                 ; 10 ms for Enable pulse
     rcall delay_ms
     cbi PORTB, LCD_E
-    ldi R16, 50        ; 50 ms delay
+    ldi R16, 50                 ; 50 ms delay
     rcall delay_ms
 
     ; Step 3: Set to 8-bit mode again (D7-D4 = 0x03)
@@ -341,12 +323,11 @@ lcd_init:
     ldi R16, 50
     rcall delay_ms
 
-    ; Step 9: Now in 4-bit mode, send full commands
-    ; Function Set: 4-bit mode, 2 lines, 5x8 font
+    ; Step 9: Send full commands in 4-bit mode
     ldi R16, LCD_FUNCTION_SET
     rcall lcd_command
 
-    ; Step 11: Display On, cursor off, blink off
+    ; Step 11: Display on, cursor off, blink off
     ldi R16, LCD_DISPLAY_ON
     rcall lcd_command
 
@@ -367,23 +348,23 @@ lcd_command:
     ; High nibble
     push R16
     mov R17, R16
-    andi R17, 0xF0  ; Mask to keep only upper 4 bits
-    swap R17        ; Swap to get upper nibble in lower 4 bits
+    andi R17, 0xF0              ; Mask to keep only upper 4 bits
+    swap R17                    ; Swap to get upper nibble in lower 4 bits
     in R18, PORTC
-    andi R18, 0xF0  ; Clear PC0-PC3
+    andi R18, 0xF0              ; Clear PC0-PC3
     or R18, R17
     out PORTC, R18
-    cbi PORTB, LCD_RS ; RS = 0 for command
+    cbi PORTB, LCD_RS           ; RS = 0 for command
     sbi PORTB, LCD_E
-    ldi R16, 10       ; 10 ms for Enable pulse
+    ldi R16, 10                 ; 10 ms for Enable pulse
     rcall delay_ms
     cbi PORTB, LCD_E
-    ldi R16, 1        ; 100 µs between nibbles
+    ldi R16, 1                  ; 100 µs between nibbles
     rcall delay_ms
 
     ; Low nibble
     pop R16
-    andi R16, 0x0F  ; Mask to keep only lower 4 bits
+    andi R16, 0x0F              ; Mask to keep only lower 4 bits
     in R18, PORTC
     andi R18, 0xF0
     or R18, R16
@@ -393,7 +374,7 @@ lcd_command:
     ldi R16, 10
     rcall delay_ms
     cbi PORTB, LCD_E
-    ldi R16, 50       ; 50 ms after command
+    ldi R16, 50                 ; 50 ms after command
     rcall delay_ms
     ret
 
@@ -402,23 +383,23 @@ lcd_data:
     ; High nibble
     push R16
     mov R17, R16
-    andi R17, 0xF0 ; Mask to keep only upper 4 bits
-    swap R17       ; Swap to get upper nibble in lower 4 bits
+    andi R17, 0xF0              ; Mask to keep only upper 4 bits
+    swap R17                    ; Swap to get upper nibble in lower 4 bits
     in R18, PORTC
-    andi R18, 0xF0 ; Clear PC0-PC3
+    andi R18, 0xF0              ; Clear PC0-PC3
     or R18, R17
     out PORTC, R18
-    sbi PORTB, LCD_RS ; RS = 1 for data
+    sbi PORTB, LCD_RS           ; RS = 1 for data
     sbi PORTB, LCD_E
-    ldi R16, 10       ; 10 ms for Enable pulse
+    ldi R16, 10                 ; 10 ms for Enable pulse
     rcall delay_ms
     cbi PORTB, LCD_E
-    ldi R16, 1        ; 100 µs between nibbles
+    ldi R16, 1                  ; 100 µs between nibbles
     rcall delay_ms
 
     ; Low nibble
     pop R16
-    andi R16, 0x0F   ; Mask to keep only lower 4 bits
+    andi R16, 0x0F   ;           Mask to keep only lower 4 bits
     in R18, PORTC
     andi R18, 0xF0
     or R18, R16
@@ -428,11 +409,11 @@ lcd_data:
     ldi R16, 10
     rcall delay_ms
     cbi PORTB, LCD_E
-    ldi R16, 50       ; 50 ms after data
+    ldi R16, 50                 ; 50 ms after data
     rcall delay_ms
     ret
 
-/* ******* LCD DELAYS ******* /
+/* ******* LCD DELAYS ****** */
 
 delay_ms:
     push R16
