@@ -87,7 +87,6 @@ RESET:
 
     ; Initialize LCD
     rcall lcd_init
-
     ; Display initial message
     rcall display_fan_state
 
@@ -160,7 +159,10 @@ isr_exit:
     pop R16
     reti
 
-; Function to display fan state on LCD
+/* ******* DISPLAY TEXT ON LCD ******* /
+
+; Display fan state
+
 display_fan_state:
     ; Clear display
     ldi R16, LCD_CLEAR
@@ -168,7 +170,7 @@ display_fan_state:
     ldi R16, 50
     rcall delay_ms
 
-    ; Set cursor to first row, first column (DDRAM address 0x00)
+    ; Set cursor to first row, first column
     ldi R16, LCD_SET_DDRAM | 0x00
     rcall lcd_command
 
@@ -188,7 +190,7 @@ display_fan_state:
     ldi R16, ' '
     rcall lcd_data
 
-    ; Display "ON" or "OFF" based on fan_state
+    ; Display "on" or "off"
     lds R16, fan_state
     cpi R16, 0
     breq display_off
@@ -206,32 +208,55 @@ display_off:
     ldi R16, 'F'
     rcall lcd_data
 
+; Display duty cycle
+
 display_dc:
     ; Set cursor to second row, first column (DDRAM address 0x40 for 16x2 LCD)
     ldi R16, LCD_SET_DDRAM | 0x40
     rcall lcd_command
 
-    ; Display "DC=75.6%" on the second row
+    ; Display "DC="
     ldi R16, 'D'
     rcall lcd_data
     ldi R16, 'C'
     rcall lcd_data
     ldi R16, '='
     rcall lcd_data
-    ldi R16, '7'
-    rcall lcd_data
-    ldi R16, '5'
-    rcall lcd_data
-    ldi R16, '.'
-    rcall lcd_data
-    ldi R16, '6'
-    rcall lcd_data
+
+    ; Display the duty cycle percentage, assuming it's in R19
+    ; Example: R19 = 75 (indicating 75%)
+
+    ; Convert R19 to a string, e.g., "75%"
+    ldi R19, 75
+    mov R20, R19         ; Copy the value of duty cycle into R20
+    ldi R21, 10          ; We will divide by 10 (get the tens place)
+    
+    ; Get the tens digit
+    div R20, R21         ; R20 = remainder (ones digit), R21 = quotient (tens digit)
+    mov R22, R20         ; R22 now holds the ones digit (R20)
+    mov R23, R21         ; R23 now holds the tens digit (R21)
+
+    ; Display the tens digit
+    add R23, '0'         ; Convert to ASCII
+    rcall display_digit
+
+    ; Display the ones digit
+    add R22, '0'         ; Convert to ASCII
+    rcall display_digit
+
+    ; Display the percentage sign
     ldi R16, '%'
     rcall lcd_data
 
     ret
 
-; Subroutine: Initialize LCD in 4-bit mode (using busy-wait delays)
+; Subroutine to display a digit on the LCD (assumes the digit is in R16)
+display_digit:
+    rcall lcd_data
+    ret
+
+/* ******* INITIALIZE LCD ******* /
+
 lcd_init:
     ; Wait for LCD to power up (1000 ms = 250 ms * 4)
     ldi R16, 250
@@ -320,7 +345,7 @@ lcd_init:
 
     ret
 
-; Subroutine: Send a command to the LCD (4-bit mode)
+; Send a command to the LCD (4-bit mode)
 lcd_command:
     ; High nibble
     push R16
@@ -355,7 +380,7 @@ lcd_command:
     rcall delay_ms
     ret
 
-; Subroutine: Send data to the LCD (4-bit mode)
+; Send data to the LCD (4-bit mode)
 lcd_data:
     ; High nibble
     push R16
@@ -390,7 +415,8 @@ lcd_data:
     rcall delay_ms
     ret
 
-; Subroutine: Delay in milliseconds (R16 = number of ms, tuned for 1 MHz)
+/* ******* LCD DELAYS ******* /
+
 delay_ms:
     push R16
     push R17
