@@ -32,6 +32,8 @@
 .equ LCD_FUNCTION_SET = 0x28    ; 4-bit mode, 2 lines, 5x8 font
 .equ LCD_SET_DDRAM  = 0x80      ; Base address for DDRAM (add offset for position)
 
+ .def regDutyCycle = R19  ; New register for duty cycle display (0-100)
+
 ; Data segment (for variables)
 .dseg
 .org SRAM_START
@@ -76,6 +78,8 @@ RESET:
     ldi R16, 0
     sts fan_state, R16
     sts update_flag, R16        ; Clear update flag
+
+    ldi regDutyCycle, 50
 
     ; Set up External Interrupt INT0 on PD2
     ldi R16, 0                  ; ISC01=0, ISC00=0: Low level on INT0 triggers interrupt
@@ -164,14 +168,67 @@ isr_exit:
 ; Display fan state
 
 display_fan_state:
+    push R16
+    push R17
+    push R18
+    push R19  ; Preserve regDutyCycle (R19)
+
     ; Clear display
     ldi R16, LCD_CLEAR
     rcall lcd_command
     ldi R16, 50
     rcall delay_ms
 
-    ; Set cursor to first row, first column
+    ; Set cursor to first row, first column (DDRAM address 0x00)
     ldi R16, LCD_SET_DDRAM | 0x00
+    rcall lcd_command
+
+    ; Display "DC="
+    ldi R16, 'D'
+    rcall lcd_data
+    ldi R16, 'C'
+    rcall lcd_data
+    ldi R16, '='
+    rcall lcd_data
+
+    ; Convert regDutyCycle to ASCII and display
+    mov R16, regDutyCycle  ; Load duty cycle (0-100)
+    ; Extract tens digit
+    ldi R17, 10
+    clr R18              ; Clear remainder
+div_tens:
+    sub R16, R17
+    brlo tens_done
+    inc R18
+    rjmp div_tens
+tens_done:
+    add R16, R17         ; Add back the last subtraction
+    mov R19, R16         ; Save ones digit in R19 (temporary, not regDutyCycle)
+    mov R16, R18         ; Move tens digit to R16
+    cpi R16, 0           ; If tens digit is 0, display space (for 0-9)
+    breq display_space
+    subi R16, -48        ; Convert to ASCII ('0' = 48)
+    rjmp display_tens
+display_space:
+    ldi R16, ' '         ; Display space for single-digit numbers
+display_tens:
+    rcall lcd_data
+
+    ; Display ones digit
+    mov R16, R19
+    subi R16, -48        ; Convert to ASCII
+    rcall lcd_data
+
+    ; Display ".0%"
+    ldi R16, '.'
+    rcall lcd_data
+    ldi R16, '0'
+    rcall lcd_data
+    ldi R16, '%'
+    rcall lcd_data
+
+    ; Set cursor to second row, first column (DDRAM address 0x40 for 16x2 LCD)
+    ldi R16, LCD_SET_DDRAM | 0x40
     rcall lcd_command
 
     ; Display "Fan is "
@@ -190,7 +247,7 @@ display_fan_state:
     ldi R16, ' '
     rcall lcd_data
 
-    ; Display "on" or "off"
+    ; Display "ON" or "OFF" based on fan_state
     lds R16, fan_state
     cpi R16, 0
     breq display_off
@@ -199,7 +256,7 @@ display_on:
     rcall lcd_data
     ldi R16, 'N'
     rcall lcd_data
-    rjmp display_dc
+    rjmp display_end
 display_off:
     ldi R16, 'O'
     rcall lcd_data
@@ -208,51 +265,11 @@ display_off:
     ldi R16, 'F'
     rcall lcd_data
 
-; Display duty cycle
-
-display_dc:
-    ; Set cursor to second row, first column (DDRAM address 0x40 for 16x2 LCD)
-    ldi R16, LCD_SET_DDRAM | 0x40
-    rcall lcd_command
-
-    ; Display "DC="
-    ldi R16, 'D'
-    rcall lcd_data
-    ldi R16, 'C'
-    rcall lcd_data
-    ldi R16, '='
-    rcall lcd_data
-
-    ; Display the duty cycle percentage, assuming it's in R19
-    ; Example: R19 = 75 (indicating 75%)
-
-    ; Convert R19 to a string, e.g., "75%"
-    ldi R19, 75
-    mov R20, R19         ; Copy the value of duty cycle into R20
-    ldi R21, 10          ; We will divide by 10 (get the tens place)
-    
-    ; Get the tens digit
-    div R20, R21         ; R20 = remainder (ones digit), R21 = quotient (tens digit)
-    mov R22, R20         ; R22 now holds the ones digit (R20)
-    mov R23, R21         ; R23 now holds the tens digit (R21)
-
-    ; Display the tens digit
-    add R23, '0'         ; Convert to ASCII
-    rcall display_digit
-
-    ; Display the ones digit
-    add R22, '0'         ; Convert to ASCII
-    rcall display_digit
-
-    ; Display the percentage sign
-    ldi R16, '%'
-    rcall lcd_data
-
-    ret
-
-; Subroutine to display a digit on the LCD (assumes the digit is in R16)
-display_digit:
-    rcall lcd_data
+display_end:
+    pop R19  ; Restore regDutyCycle (R19)
+    pop R18
+    pop R17
+    pop R16
     ret
 
 /* ******* INITIALIZE LCD ******* /
