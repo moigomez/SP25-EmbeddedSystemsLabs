@@ -2,7 +2,7 @@
 ; Lab4.asm
 ;
 ; Created: 4/7/2025
-; Author : Moises Gomez
+; Author : Emre Akgül & Moises Gomez
 ;
 ; ASM file incorporating all required functionality
 ; of Lab04.
@@ -22,7 +22,7 @@
 ; R20 - Temporary register storing RPG transition states    (regTransitions)
 ; R21 - Temporary register for 'building' RPG transitions
 ; R22 - Temporary register for checking if RPG is on detent
-; R23 - Stores a number for testing of dynamic DC           (regTestNumber)
+; R23 - Stores the value of the duty cycle to be displayed  (regDCDisplay)
 ; R24 - Temporary register for initializing LCD
 ; R25 - Temporary register for initializing LCD
 ;
@@ -32,17 +32,17 @@
 ; Define constants
 .equ RPG_A = 0                  ; PB0 - PCINT0
 .equ RPG_B = 1                  ; PB1 - PCINT1
-.equ TEST_PIN = 6               ; PD6 - Testing purposes
 .equ LCD_RS = 5                 ; PB5 - Register Select
 .equ LCD_E  = 3                 ; PB3 - Enable
 .equ BUTTON_PIN = 2             ; PD2 - INT0
 .equ FAN_PIN = 5                ; PD5 - Cooling fan
 
+; Define register names
 .def regCurrent = R16
 .def regDutyCycle = R17
 .def regPrevious = R19
 .def regTransitions = R20
-.def regTestNumber = R23
+.def regDCDisplay = R23
 
 ; LCD Commands
 .equ LCD_CLEAR      = 0x01
@@ -74,9 +74,8 @@ RESET:
     out SPH, R16
 
     ; Set up I/O pins
-    cbi DDRB, RPG_A            ; Set PB0 as input
-    cbi DDRB, RPG_B            ; Set PB1 as input
-    sbi DDRD, TEST_PIN         ; PD6 (Test) - Output
+    cbi DDRB, RPG_A             ; Set PB0 as input
+    cbi DDRB, RPG_B             ; Set PB1 as input
     sbi DDRB, LCD_RS            ; PB5 as output (LCD RS)
     sbi DDRB, LCD_E             ; PB3 as output (LCD E)
     sbi DDRC, 0                 ; PC0 as output (LCD D4)
@@ -93,10 +92,9 @@ RESET:
     clr R22
 
     ; Initialize fan state to off
+    clr R20
     sts fan_state, R20
     sts update_flag, R20        ; Clear update flag
-
-    ldi regTestNumber, 75       ; Load arbitrary number to display on LCD
 
     sbic PINB, RPG_A
     ori regPrevious, (1 << 1)   ; Save A to bit 1
@@ -116,9 +114,8 @@ RESET:
 
     sei
 
-    ; Initialize LCD
+    ; Initialize LCD and display
     rcall lcd_init
-    ; Display initial message
     rcall display_fan_state
 
 main_loop:
@@ -174,9 +171,8 @@ clockwise:
                                 ; } else {
     inc R22                     ;     R22++
     inc regDutyCycle            ;     regDutyCycle++
-    rcall pwm_start             ;     pwm_start()
+    rcall start_pwm             ;     start_pwm()
                                 ; }
-    ;sbi PORTD, TEST_PIN
     rjmp save_state
 
 counterclockwise:
@@ -185,16 +181,15 @@ counterclockwise:
                                 ; } else {
     inc R22                     ;     R22++
     dec regDutyCycle            ;     regDutyCycle--
-    rcall pwm_start             ;     pwm_start()
+    rcall start_pwm             ;     start_pwm()
                                 ; }
-    ;cbi PORTD, TEST_PIN
 save_state:
     mov regPrevious, regCurrent
     reti
 
-pwm_start:
+start_pwm:
     out OCR0B, regDutyCycle
-    sbi DDRD, FAN_PIN                                             ; Set PD6 (OC0B) as output
+    sbi DDRD, FAN_PIN
 
     ; Configure Timer0
     ldi R18, (1 << WGM01) | (1 << WGM00) | (1 << COM0B1)    ; Set Fast PWM and non-inverting mode
@@ -203,19 +198,19 @@ pwm_start:
     ldi R18, (1 << WGM02) | (1 << CS00)                     ; Prescaler = 1 and finish mode selection
     out TCCR0B, R18
 
-    ; DC = (OCR0B / OCR0A) * 100
-    ldi R18, 99
+    ; DC = (OCR0A / OCR0B) * 100
+    ldi R18, 199
     out OCR0A, R18
 
     cpi R22, 4                  ; if (R22 != 4) {
-    brne end                    ;     end()
+    brne end_pwm                ;     end_pwm()
     clr R22                     ; } else {
     out OCR0B, regDutyCycle     ;     OCR0B = regDutyCycle
                                 ; }
-    end:
+end_pwm:
     ret
 
-/* ================= */
+/* == END SECTION == */
 
 
 /* === LCD + PBS === */
@@ -237,12 +232,12 @@ INT0_ISR:
 turn_fan_off_isr:
     ldi R20, 0
     sts fan_state, R20
-    cbi PORTD, FAN_PIN  ; Turn fan off
+    cbi PORTD, FAN_PIN          ; Turn fan off
     rjmp set_update_flag
 turn_fan_on_isr:
     ldi R20, 1
     sts fan_state, R20
-    sbi PORTD, FAN_PIN  ; Turn fan on
+    sbi PORTD, FAN_PIN          ; Turn fan on
 
 set_update_flag:
     ldi R20, 1
@@ -251,7 +246,7 @@ set_update_flag:
 wait_loop:
     in R20, PIND
     andi R20, (1<<BUTTON_PIN)
-    cpi R20, (1<<BUTTON_PIN)  ; Check if PD2 is high
+    cpi R20, (1<<BUTTON_PIN)    ; Check if PD2 is high
     brne wait_loop
 
     ; Re-enable INT0
@@ -265,7 +260,7 @@ isr_exit:
     pop R20
     reti
 
-/* ******* DISPLAY TEXT ON LCD ****** */
+/* DISPLAY TEXT ON LCD */
 
 ; Display fan state
 
@@ -273,7 +268,7 @@ display_fan_state:
     push R20
     push R24
     push R25
-    push R23  ; Preserve regTestNumber (R23)
+    push R23                    ; Preserve regDCDisplay (R23)
 
     ; Clear display
     ldi R20, LCD_CLEAR
@@ -293,11 +288,12 @@ display_fan_state:
     ldi R20, '='
     rcall lcd_data
 
-    ; Convert regTestNumber to ASCII and display
-    mov R20, regTestNumber  ; Load duty cycle (0-100)
+    ; Convert regDCDisplay to ASCII and display
+    mov regDCDisplay, R17
+    mov R20, regDCDisplay       ; Load duty cycle (0-100)
     ; Extract tens digit
     ldi R24, 10
-    clr R25              ; Clear remainder
+    clr R25                     ; Clear remainder
 div_tens:
     sub R20, R24
     brlo tens_done
@@ -305,7 +301,7 @@ div_tens:
     rjmp div_tens
 tens_done:
     add R20, R24                ; Add back the last subtraction
-    mov R23, R20                ; Save ones digit in R23 (temporary, not regTestNumber)
+    mov R23, R20                ; Save ones digit in R23 (temporary, not regDCDisplay)
     mov R20, R25                ; Move tens digit to R20
     cpi R20, 0                  ; If tens digit is 0, display space (for 0-9)
     breq display_space
@@ -329,7 +325,7 @@ display_tens:
     ldi R20, '%'
     rcall lcd_data
 
-    ; Set cursor to second row, first column (DDRAM address 0x40 for 16x2 LCD)
+    ; Set cursor to second row, first column
     ldi R20, LCD_SET_DDRAM | 0x40
     rcall lcd_command
 
@@ -349,7 +345,7 @@ display_tens:
     ldi R20, ' '
     rcall lcd_data
 
-    ; Display "ON" or "OFF" based on fan_state
+    ; Display "ON" or "OFF" depending on fan_state
     lds R20, fan_state
     cpi R20, 0
     breq display_off
@@ -368,13 +364,13 @@ display_off:
     rcall lcd_data
 
 display_end:
-    pop R23  ; Restore regTestNumber (R23)
+    pop R23                     ; Restore regDCDisplay (R23)
     pop R25
     pop R24
     pop R20
     ret
 
-/* ******* INITIALIZE LCD ****** */
+/* INITIALIZE LCD */
 
 lcd_init:
     ; Wait for LCD to power up (1000 ms = 250 ms * 4)
@@ -387,7 +383,7 @@ lcd_init:
     ldi R20, 250
     rcall delay_ms
 
-    ; Step 1: Set to 8-bit mode (D7-D4 = 0x03)
+    ; Set to 8-bit mode (D7-D4 = 0x03)
     ldi R20, 0x03
     in R24, PORTC
     andi R24, 0xF0              ; Clear PC0-PC3 (D4-D7)
@@ -401,7 +397,7 @@ lcd_init:
     ldi R20, 50                 ; 50 ms delay
     rcall delay_ms
 
-    ; Step 3: Set to 8-bit mode again (D7-D4 = 0x03)
+    ; Set to 8-bit mode again (D7-D4 = 0x03)
     ldi R20, 0x03
     in R24, PORTC
     andi R24, 0xF0
@@ -415,7 +411,7 @@ lcd_init:
     ldi R20, 50
     rcall delay_ms
 
-    ; Step 5: Set to 8-bit mode a third time (D7-D4 = 0x03)
+    ; Set to 8-bit mode a third time (D7-D4 = 0x03)
     ldi R20, 0x03
     in R24, PORTC
     andi R24, 0xF0
@@ -429,7 +425,7 @@ lcd_init:
     ldi R20, 50
     rcall delay_ms
 
-    ; Step 7: Set to 4-bit mode (D7-D4 = 0x02)
+    ; Set to 4-bit mode (D7-D4 = 0x02)
     ldi R20, 0x02
     in R24, PORTC
     andi R24, 0xF0
@@ -443,21 +439,21 @@ lcd_init:
     ldi R20, 50
     rcall delay_ms
 
-    ; Step 9: Send full commands in 4-bit mode
+    ; Send full commands in 4-bit mode
     ldi R20, LCD_FUNCTION_SET
     rcall lcd_command
 
-    ; Step 11: Display on, cursor off, blink off
+    ; Display on, cursor off, blink off
     ldi R20, LCD_DISPLAY_ON
     rcall lcd_command
 
-    ; Step 12: Clear Display
+    ; Clear Display
     ldi R20, LCD_CLEAR
     rcall lcd_command
     ldi R20, 50
     rcall delay_ms
 
-    ; Step 13: Entry Mode: increment cursor, no display shift
+    ; Entry Mode: increment cursor, no display shift
     ldi R20, LCD_ENTRY_MODE
     rcall lcd_command
 
@@ -519,7 +515,7 @@ lcd_data:
 
     ; Low nibble
     pop R20
-    andi R20, 0x0F   ;           Mask to keep only lower 4 bits
+    andi R20, 0x0F              ; Mask to keep only lower 4 bits
     in R25, PORTC
     andi R25, 0xF0
     or R25, R20
@@ -533,7 +529,7 @@ lcd_data:
     rcall delay_ms
     ret
 
-/* ******* LCD DELAYS ****** */
+/* LCD DELAYS */
 
 delay_ms:
     push R20
@@ -542,7 +538,8 @@ delay_ms_loop:
     cpi R20, 0
     breq delay_ms_done
     dec R20
-    ldi R24, 250  ; 250 * 4 cycles = 1000 cycles = 1 ms at 1 MHz
+    ldi R24, 250                ; 250 * 4 cycles = 1000 cycles 
+                                ; = 1 ms at 1 MHz
 delay_ms_inner:
     dec R24
     nop
@@ -553,4 +550,4 @@ delay_ms_done:
     pop R20
     ret
 
-/* ================= */
+/* == END SECTION == */
