@@ -10,15 +10,14 @@
  *
  */
 
-#include <avr/io.h>
 
-#define FOSC 8000000    // Clock speed (8MHz)
+#define F_CPU 16000000UL    // Clock frequency (16MHz)
+#include <avr/io.h>
+#include <util/delay.h>
+
+#define FOSC 8000000UL    // Oscillator frequency (8MHz)
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1
-
-int main(void) {
-    USART_Init(MYUBRR);
-}
 
 void USART_Init(unsigned int ubrr) {
     // Set baud rate
@@ -46,4 +45,19 @@ unsigned char USART_Receive(void) {
 
     // Get and return received data from the buffer
     return UDR0;
+}
+
+int main(void) {
+    USART_Init(MYUBRR);
+
+    while (1) {
+        USART_Transmit('H');
+        USART_Transmit('E');
+        USART_Transmit('L');
+        USART_Transmit('L');
+        USART_Transmit('O');
+
+        _delay_ms(1000);
+    }
+    
 }
