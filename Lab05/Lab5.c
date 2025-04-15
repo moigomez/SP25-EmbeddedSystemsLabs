@@ -19,6 +19,8 @@
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1
 
+//#define INPUT_PIN PD5       // Define test pin
+
 void USART_Init(unsigned int ubrr) {
     // Set baud rate
     UBRR0H = (unsigned char)(ubrr >> 8);
@@ -43,24 +45,45 @@ void USART_SendString(const char *str) {
     }
 }
 
+void ADC_init() {
+    // Set voltage reference
+    ADMUX =  (1 << REFS1) | (1 << REFS0);
+
+
+}
+uint16_t ADC_read(uint8_t channel) {
+    ADCSRA |= (1 << ADSC);
+
+    while (ADCSRA & (1 << ADSC));
+
+    return ADC
+}
+
+
 int main(void) {
     USART_Init(MYUBRR);
 
+    /*
     // Set PD2 as input
     DDRD &= ~(1 << INPUT_PIN);
 
     // Optional: Enable pull-up resistor
     PORTD |= (1 << INPUT_PIN);
+    */
 
     while (1) {
+        /*
         // Read the pin state
         if (PIND & (1 << INPUT_PIN)) {
             USART_SendString("Pin is HIGH\r\n");
         } else {
             USART_SendString("Pin is LOW\r\n");
         }
+        */
 
-        _delay_ms(1000);
+        uint16_t adc_value = ADC_read(0);
+
+        _delay_ms(500);
     }
     
 }
