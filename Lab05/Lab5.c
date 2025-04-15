@@ -15,7 +15,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define FOSC 8000000UL    // Oscillator frequency (8MHz)
+#define FOSC 8000000UL      // Oscillator frequency (8MHz)
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1
 
@@ -25,8 +25,8 @@ void USART_Init(unsigned int ubrr) {
     UBRR0L = (unsigned char)ubrr;
     // Enable receiver and transmitter
     UCSR0B = (1 << RXEN0) | (1 << TXEN0);
-    // Set frame format: 8data, 2stop bit
-    UCSR0C = (1 << USBS0) | (3 << UCSZ00);
+    // Set frame format: 8 data bits, 1 stop bit
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 }
 void USART_Transmit(unsigned char data) {
     // Wait for the transmit buffer to be empty
@@ -37,25 +37,28 @@ void USART_Transmit(unsigned char data) {
     // Put data into buffer, sends the data
     UDR0 = data;
 }
-unsigned char USART_Receive(void) {
-    // Wait for data to be received
-    while (!(UCSR0A & (1 << RXC0))) {
-        // Do nothing (wait)
+void USART_SendString(const char *str) {
+    while (*str) {
+        USART_Transmit(*str++);
     }
-
-    // Get and return received data from the buffer
-    return UDR0;
 }
 
 int main(void) {
     USART_Init(MYUBRR);
 
+    // Set PD2 as input
+    DDRD &= ~(1 << INPUT_PIN);
+
+    // Optional: Enable pull-up resistor
+    PORTD |= (1 << INPUT_PIN);
+
     while (1) {
-        USART_Transmit('H');
-        USART_Transmit('E');
-        USART_Transmit('L');
-        USART_Transmit('L');
-        USART_Transmit('O');
+        // Read the pin state
+        if (PIND & (1 << INPUT_PIN)) {
+            USART_SendString("Pin is HIGH\r\n");
+        } else {
+            USART_SendString("Pin is LOW\r\n");
+        }
 
         _delay_ms(1000);
     }
