@@ -38,6 +38,11 @@ void USART_Transmit(unsigned char data) {
     // Put data into buffer, sends the data
     UDR0 = data;
 }
+unsigned char USART_Receive(void) {
+     // Wait for data
+    while (!(UCSR0A & (1 << RXC0)));
+    return UDR0;
+}
 void USART_SendString(const char *str) {
     while (*str) {
         USART_Transmit(*str++);
@@ -70,19 +75,21 @@ int main(void) {
     ADC_init();
 
     while (1) {
-        char voltage_string[20];
-        char voltage_expression[20];
+        // Store sent commands
+        char command = USART_Receive();
 
-        uint16_t adc_value = ADC_read(0);   // Read ADC value
-        float voltage_value = (adc_value * 1.1) / 1024.0;   // Convert ADC value to voltage
+        if (command == 'G') {
+            char voltage_string[20];
+            char voltage_expression[20];
 
-        dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
-        snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
+            uint16_t adc_value = ADC_read(0);   // Read ADC value
+            float voltage_value = (adc_value * 1.1) / 1024.0;   // Convert ADC value to voltage
 
-        // Return voltage
-        USART_SendString(voltage_expression);
+            dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
+            snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
 
-        _delay_ms(500);
+            // Return voltage
+            USART_SendString(voltage_expression);
+        }
     }
-    
 }
