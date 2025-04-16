@@ -51,7 +51,7 @@ void USART_SendString(const char *str) {
 
 void ADC_init() {
     // Set voltage reference
-    ADMUX =  (1 << REFS1) | (1 << REFS0);
+    ADMUX = (1 << REFS0);
 
     // Enable ADC and set prescaler of 128
     ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
@@ -83,7 +83,7 @@ int main(void) {
             char voltage_expression[20];
 
             uint16_t adc_value = ADC_read(0);   // Read ADC value
-            float voltage_value = (adc_value * 1.1) / 1024.0;   // Convert ADC value to voltage
+            float voltage_value = (adc_value * 5) / 1024.0;   // Convert ADC value to voltage
 
             dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
             snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
