@@ -22,6 +22,8 @@
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1  // Calculate UBRR0 register value
 
+#define MAX_COMMAND_LEN 50
+
 void USART_Init(unsigned int ubrr) {
     // Set baud rate
     UBRR0H = (unsigned char)(ubrr >> 8);
@@ -49,6 +51,7 @@ void USART_SendString(const char *str) {
     }
 }
 
+//  *** ADC Initialization ***
 void ADC_init() {
     // Set voltage reference
     ADMUX = (1 << REFS0);
@@ -69,27 +72,83 @@ uint16_t ADC_read(uint8_t channel) {
     return ADC;
 }
 
+void receive_command(char *command, u_int8_t max_len) {
+    u_int8_t index = 0;
+    char c;
+    while(index < max_len - 1) {
+        c = USART_Receive();
+        // Ignore any returns in the command
+        if (c == '\n') {
+            break;
+        }
+        // Store incoming character
+        command[index++] = c;
+    }
+    command[index] = '\0';  // Terminate string
+}
 
 int main(void) {
     USART_Init(MYUBRR);
     ADC_init();
 
+    char command[MAX_COMMAND_LEN]
+
     while (1) {
-        // Store sent commands
-        char command = USART_Receive();
+        receive_command(command, MAX_COMMAND_LEN);
+        char *token = strtok(command, ",")  // Split command by delimiter ',';
 
-        if (command == 'G') {
-            char voltage_string[20];
-            char voltage_expression[20];
+        if (token[0] == 'G' && token[0] == 'M' && token[0] == 'S' && token != NULL) {
+            if (token[0] == 'G') {
+                char voltage_string[20];
+                char voltage_expression[20];
 
-            uint16_t adc_value = ADC_read(0);   // Read ADC value
-            float voltage_value = (adc_value * 5) / 1024.0;   // Convert ADC value to voltage
+                uint16_t adc_value = ADC_read(0);   // Read ADC value
+                float voltage_value = (adc_value * 5) / 1024.0;   // Convert ADC value to voltage
 
-            dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
-            snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
+                dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
+                snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
 
-            // Return voltage
-            USART_SendString(voltage_expression);
+                // Return voltage
+                USART_SendString(voltage_expression);
+            }
+            if (token[0] == 'M') {
+                USART_SendString("M Detected\n");
+            }
+
+        /*
+        else if command.firstChar() == 'M' && command.length() > 1 {
+            int n = command.secondChar();
+            int dt = command.lastChar();
+
+            if (n >= 2 && n <= 20) && (dt >= 1 && dt <= 10)  {
+                for i = 0; i <= n; i++ {
+                    // read ACD
+                    // convert to voltage
+                    // transmit string
+
+                    delay_ms(dt * 1000);
+                }
+            } else {
+                // error
+            }
+        }
+        else if command.firstChar() == 'S' && command.length() > 1  {
+            int c = command.secondChar();
+            string v = command.lastChar();
+
+            float voltage = 0;
+            atoi(voltage, v); 
+
+            if (c == 0 || c == 1) && voltage {
+                // DAC_channel = c
+                // DAC_voltage = voltage
+
+                // set ADC5 as output and return configured D/A signal 
+            }
+        }
+        */
+        } else {
+            USART_SendString("Invalid Command\n");
         }
     }
 }
