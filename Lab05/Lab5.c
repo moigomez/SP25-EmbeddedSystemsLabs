@@ -95,15 +95,15 @@ int main(void) {
 
     while (1) {
         receive_command(command, MAX_COMMAND_LEN);
-        char *token = strtok(command, ",");     // Split command by delimiter ',';
+        char *token = strtok(command, ",");         // Split command by delimiter ',';
 
-        if (token[0] == 'G' && token[0] == 'M' && token[0] == 'S' && token != NULL) {
+        if ((token[0] == 'G' || token[0] == 'M' || token[0] == 'S') && token != NULL) {
             if (token[0] == 'G') {
                 char voltage_string[20];
                 char voltage_expression[20];
 
                 uint16_t adc_value = ADC_read(0);   // Read ADC value
-                float voltage_value = (adc_value * 5) / 1024.0;   // Convert ADC value to voltage
+                float voltage_value = (adc_value * 5) / 1024.0; // Convert ADC value to voltage
 
                 dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
                 snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
@@ -113,25 +113,40 @@ int main(void) {
             }
             if (token[0] == 'M') {
                 USART_SendString("M Detected\n");
+
+                char *n_arg = strtok(NULL, ",");    // Extract first comma-separated value
+                char *dt_arg = strtok(NULL, ",");   // Extract second comma-separated value
+                // Convert arguments to integers
+                int n = atoi(n_arg);
+                int dt = atoi(dt_arg);
+
+                // Return voltages if within bounds and format is valid
+                if (n >= 2 && n <= 20) && (dt >= 1 && dt <= 10) {
+                    for (int i = 1; i <= n; i++) {
+                        char voltage_string[20];
+                        char voltage_expression[20];
+        
+                        uint16_t adc_value = ADC_read(0);   // Read ADC value
+                        float voltage_value = (adc_value * 5) / 1024.0; // Convert ADC value to voltage
+        
+                        dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
+                        snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
+        
+                        // Return voltage
+                        USART_SendString(voltage_expression);
+
+                        int dt_ms = dt * 1000;  // Convert delay to milliseconds
+                        _delay_ms(dt_ms);
+                    }
+                } else {
+                    USART_SendString("Invalid format!\n");
+                    USART_SendString("Usage: M,<number of measurements>,<time delay>\n");
+                    USART_SendString("  - <number of measurements>: integer (2-20)\n");
+                    USART_SendString("  - <time delay>:             integer (1-10, seconds)\n");
+                }
             }
 
         /* PSEUDOCODE
-        else if command.firstChar() == 'M' && command.length() > 1 {
-            int n = command.secondChar();
-            int dt = command.lastChar();
-
-            if (n >= 2 && n <= 20) && (dt >= 1 && dt <= 10)  {
-                for i = 0; i <= n; i++ {
-                    // read ACD
-                    // convert to voltage
-                    // transmit string
-
-                    delay_ms(dt * 1000);
-                }
-            } else {
-                // error
-            }
-        }
         else if command.firstChar() == 'S' && command.length() > 1  {
             int c = command.secondChar();
             string v = command.lastChar();
@@ -148,7 +163,7 @@ int main(void) {
         }
         */
         } else {
-            USART_SendString("Invalid Command\n");
+            USART_SendString("\nInvalid command!\n\n");
         }
     }
 }
