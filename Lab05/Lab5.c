@@ -113,8 +113,6 @@ int main(void) {
                 USART_SendString(voltage_expression);
             }
             if (token[0] == 'M') {
-                USART_SendString("M Detected\n");
-
                 char *n_arg = strtok(NULL, ",");    // Extract first comma-separated value
                 char *dt_arg = strtok(NULL, ",");   // Extract second comma-separated value
                 // Convert arguments to integers
@@ -145,6 +143,25 @@ int main(void) {
                     USART_SendString("  - <number of measurements>: integer (2-20)\n");
                     USART_SendString("  - <time delay>:             integer (1-10, seconds)\n");
                 }
+            }
+            if (token[0] == 'S') {
+                char *c_arg = strtok(NULL, ",");   // Extract first comma-separated value
+                char *v_arg = strtok(NULL, ",");   // Extract second comma-separated value
+                // Convert arguments to integers
+                int c = atoi(c_arg);
+                float v = atof(v_arg);
+
+                if ((c == 0 || c == 1) && v) {
+
+                    // DAC code here
+
+                } else {
+                    USART_SendString("Invalid format!\n");
+                    USART_SendString("Usage: S,<DAC channel number>,<output voltage>\n");
+                    USART_SendString("  - <DAC channel number>: integer (0 or 1)\n");
+                    USART_SendString("  - <output voltage>:     float\n");
+                }
+
             }
 
         /* PSEUDOCODE
