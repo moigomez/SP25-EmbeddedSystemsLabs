@@ -11,16 +11,17 @@
  */
 
 
-#define F_CPU 16000000UL            // Clock frequency (16MHz)
+#define __DELAY_BACKWARD_COMPATIBLE__   // Allows variables to be used as arguments in delays
+#define F_CPU 16000000UL                // Clock frequency (16MHz)
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define FOSC 8000000UL              // Oscillator frequency (8MHz)
+#define FOSC 8000000UL                  // Oscillator frequency (8MHz)
 #define BAUD 9600
-#define MYUBRR FOSC / 8 / BAUD - 1  // Calculate UBRR0 register value
+#define MYUBRR FOSC / 8 / BAUD - 1      // Calculate UBRR0 register value
 
 #define MAX_COMMAND_LEN 50
 
@@ -121,7 +122,7 @@ int main(void) {
                 int dt = atoi(dt_arg);
 
                 // Return voltages if within bounds and format is valid
-                if (n >= 2 && n <= 20) && (dt >= 1 && dt <= 10) {
+                if ((n >= 2 && n <= 20) && (dt >= 1 && dt <= 10)) {
                     for (int i = 1; i <= n; i++) {
                         char voltage_string[20];
                         char voltage_expression[20];
