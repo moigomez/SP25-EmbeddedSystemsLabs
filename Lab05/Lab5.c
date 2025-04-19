@@ -72,8 +72,8 @@ uint16_t ADC_read(uint8_t channel) {
     return ADC;
 }
 
-void receive_command(char *command, u_int8_t max_len) {
-    u_int8_t index = 0;
+void receive_command(char *command, uint8_t max_len) {
+    uint8_t index = 0;
     char c;
     while(index < max_len - 1) {
         c = USART_Receive();
@@ -91,11 +91,11 @@ int main(void) {
     USART_Init(MYUBRR);
     ADC_init();
 
-    char command[MAX_COMMAND_LEN]
+    char command[MAX_COMMAND_LEN];
 
     while (1) {
         receive_command(command, MAX_COMMAND_LEN);
-        char *token = strtok(command, ",")  // Split command by delimiter ',';
+        char *token = strtok(command, ",");     // Split command by delimiter ',';
 
         if (token[0] == 'G' && token[0] == 'M' && token[0] == 'S' && token != NULL) {
             if (token[0] == 'G') {
@@ -115,7 +115,7 @@ int main(void) {
                 USART_SendString("M Detected\n");
             }
 
-        /*
+        /* PSEUDOCODE
         else if command.firstChar() == 'M' && command.length() > 1 {
             int n = command.secondChar();
             int dt = command.lastChar();
