@@ -14,16 +14,23 @@
 #define __DELAY_BACKWARD_COMPATIBLE__   // Allows variables to be used as arguments in delays
 #define F_CPU 16000000UL                // Clock frequency (16MHz)
 #include <avr/io.h>
+#include <util/twi.h>
 #include <util/delay.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+// USART related
 #define FOSC 8000000UL                  // Oscillator frequency (8MHz)
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1      // Calculate UBRR0 register value
 
 #define MAX_COMMAND_LEN 50
+
+// DAC related
+#define SCL_CLOCK 100000L
+#define MAX518_ADDR 0x2C                // 7-bit address
+#define MAX518_ADDR_WRITE (MAX518_ADDR << 1)
 
 void USART_Init(unsigned int ubrr) {
     // Set baud rate
@@ -86,6 +93,42 @@ void receive_command(char *command, uint8_t max_len) {
         command[index++] = c;
     }
     command[index] = '\0';  // Terminate string
+}
+
+//  *** I2C Initialization for DAC ***
+void TWI_Init(void) {
+    // Set bit rate register (TWBR) for 100kHz with no prescaler
+    TWSR = 0x00;
+    TWBR = ((F_CPU / SCL_CLOCK) - 16) / 2;
+}
+
+void TWI_Start(void) {
+    TWCR = (1 << TWSTA) | (1 << TWEN) | (1 << TWINT);
+    while (!(TWCR & (1 << TWINT)));
+}
+
+void TWI_Stop(void) {
+    TWCR = (1 << TWSTO) | (1 << TWINT) | (1 << TWEN);
+    while (TWCR & (1 << TWSTO)); // Wait for stop to finish
+}
+
+void TWI_Write(uint8_t data) {
+    TWDR = data;
+    TWCR = (1 << TWINT) | (1 << TWEN);
+    while (!(TWCR & (1 << TWINT)));
+}
+
+void MAX518_SetVoltage(uint8_t channel, float voltage) {
+    if (voltage < 0.0) voltage = 0.0;
+    if (voltage > 5.0) voltage = 5.0;
+
+    uint8_t value = (uint8_t)((voltage / 5.0) * 255.0); // 0-255 scale
+
+    TWI_Start();
+    TWI_Write(MAX518_ADDR_WRITE);           // Address + Write
+    TWI_Write(channel == 0 ? 0x00 : 0x01);  // Channel 0 or 1
+    TWI_Write(value);                       // Voltage value
+    TWI_Stop();
 }
 
 int main(void) {
@@ -152,9 +195,7 @@ int main(void) {
                 float v = atof(v_arg);
 
                 if ((c == 0 || c == 1) && v) {
-
-                    // DAC code here
-
+                    MAX518_SetVoltage(c, v);
                 } else {
                     USART_SendString("Invalid format!\n");
                     USART_SendString("Usage: S,<DAC channel number>,<output voltage>\n");
