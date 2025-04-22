@@ -194,7 +194,7 @@ int main(void) {
                 int c = atoi(c_arg);
                 float v = atof(v_arg);
 
-                if ((c == 0 || c == 1) && v) {
+                if ((c == 0 || c == 1) && (v || v == 0)) {
                     MAX518_SetVoltage(c, v);
                 } else {
                     USART_SendString("Invalid format!\n");
@@ -204,23 +204,6 @@ int main(void) {
                 }
 
             }
-
-        /* PSEUDOCODE
-        else if command.firstChar() == 'S' && command.length() > 1  {
-            int c = command.secondChar();
-            string v = command.lastChar();
-
-            float voltage = 0;
-            atoi(voltage, v); 
-
-            if (c == 0 || c == 1) && voltage {
-                // DAC_channel = c
-                // DAC_voltage = voltage
-
-                // set ADC5 as output and return configured D/A signal 
-            }
-        }
-        */
         } else {
             USART_SendString("\nInvalid command!\n\n");
         }
