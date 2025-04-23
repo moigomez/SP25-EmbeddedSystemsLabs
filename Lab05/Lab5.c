@@ -80,21 +80,6 @@ uint16_t ADC_read(uint8_t channel) {
     return ADC;
 }
 
-void receive_command(char *command, uint8_t max_len) {
-    uint8_t index = 0;
-    char c;
-    while(index < max_len - 1) {
-        c = USART_Receive();
-        // Ignore any returns in the command
-        if (c == '\n') {
-            break;
-        }
-        // Store incoming character
-        command[index++] = c;
-    }
-    command[index] = '\0';  // Terminate string
-}
-
 //  *** I2C Initialization for DAC ***
 void TWI_Init(void) {
     // Set bit rate register (TWBR) for 100kHz with no prescaler
@@ -129,6 +114,21 @@ void MAX518_SetVoltage(uint8_t channel, float voltage) {
     TWI_Write(channel == 0 ? 0x00 : 0x01);  // Channel 0 or 1
     TWI_Write(value);                       // Voltage value
     TWI_Stop();
+}
+
+void receive_command(char *command, uint8_t max_len) {
+    uint8_t index = 0;
+    char c;
+    while(index < max_len - 1) {
+        c = USART_Receive();
+        // Ignore any returns in the command
+        if (c == '\n') {
+            break;
+        }
+        // Store incoming character
+        command[index++] = c;
+    }
+    command[index] = '\0';  // Terminate string
 }
 
 int main(void) {
@@ -196,6 +196,11 @@ int main(void) {
 
                 if ((c == 0 || c == 1) && (v || v == 0)) {
                     MAX518_SetVoltage(c, v);
+
+                    char channel_expression[20];
+                    snprintf(channel_expression, sizeof(channel_expression), "DAC channel %s set to %sV (%s)", c_arg, v_arg, "hi");
+
+                    USART_SendString(channel_expression);
                 } else {
                     USART_SendString("Invalid format!\n");
                     USART_SendString("Usage: S,<DAC channel number>,<output voltage>\n");
