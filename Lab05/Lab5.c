@@ -5,8 +5,9 @@
  * Created: 4/14/2025
  * Author:  Moises Gomez
  *
- * C-program to remotely controlled logging system
- * that returns analog/digital signal data in the terminal
+ * C-program that implements a remotely controlled logging
+ * system that uses USART and I2C communication to return
+ * analog/digital signal data in the terminal
  *
  */
 
@@ -49,7 +50,7 @@ void USART_Transmit(unsigned char data) {
     UDR0 = data;
 }
 unsigned char USART_Receive(void) {
-     // Wait for data
+    // Wait for data
     while (!(UCSR0A & (1 << RXC0)));
     return UDR0;
 }
@@ -103,7 +104,7 @@ void TWI_Write(uint8_t data) {
     while (!(TWCR & (1 << TWINT)));
 }
 
-void MAX518_SetVoltage(uint8_t channel, float voltage) {
+uint8_t MAX518_SetVoltage(uint8_t channel, float voltage) {
     if (voltage < 0.0) voltage = 0.0;
     if (voltage > 5.0) voltage = 5.0;
 
@@ -114,6 +115,8 @@ void MAX518_SetVoltage(uint8_t channel, float voltage) {
     TWI_Write(channel == 0 ? 0x00 : 0x01);  // Channel 0 or 1
     TWI_Write(value);                       // Voltage value
     TWI_Stop();
+    
+    return value;
 }
 
 void receive_command(char *command, uint8_t max_len) {
@@ -167,20 +170,20 @@ int main(void) {
                     for (int i = 1; i <= n; i++) {
                         char voltage_string[20];
                         char voltage_expression[20];
-        
+                        
                         uint16_t adc_value = ADC_read(0);   // Read ADC value
                         float voltage_value = (adc_value * 5) / 1024.0; // Convert ADC value to voltage
-        
+                        
                         dtostrf(voltage_value, 6, 3, voltage_string);   // Convert voltage float number to string
                         snprintf(voltage_expression, sizeof(voltage_expression), "v=%sV\r\n", voltage_string);  // Format voltage string
-        
+                        
                         // Return voltage
                         USART_SendString(voltage_expression);
 
                         int dt_ms = dt * 1000;  // Convert delay to milliseconds
                         _delay_ms(dt_ms);
                     }
-                } else {
+                    } else {
                     USART_SendString("Invalid format!\n");
                     USART_SendString("Usage: M,<number of measurements>,<time delay>\n");
                     USART_SendString("  - <number of measurements>: integer (2-20)\n");
@@ -194,12 +197,15 @@ int main(void) {
                 int c = atoi(c_arg);
                 float v = atof(v_arg);
 
+                char voltage_string[20];
+                char channel_expression[70];
+                dtostrf(v, 6, 2, voltage_string);  // Convert voltage argument to string
+
                 if ((c == 0 || c == 1) && (v || v == 0)) {
-                    MAX518_SetVoltage(c, v);
+                    uint8_t value =  MAX518_SetVoltage(c, v);   // Set voltage in channel and return dc value
+                    snprintf(channel_expression, sizeof(channel_expression), "DAC channel %s set to %sV (%id)\r\n", c_arg, voltage_string, value);
 
-                    char channel_expression[20];
-                    snprintf(channel_expression, sizeof(channel_expression), "DAC channel %s set to %sV (%s)", c_arg, v_arg, "hi");
-
+                    // Return updated channel
                     USART_SendString(channel_expression);
                 } else {
                     USART_SendString("Invalid format!\n");
