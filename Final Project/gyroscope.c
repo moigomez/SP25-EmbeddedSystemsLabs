@@ -24,7 +24,6 @@
 #define BAUD 9600
 #define MYUBRR FOSC / 8 / BAUD - 1
 
-// === USART Functions ===
 void USART_Init(unsigned int ubrr) {
     UBRR0H = (unsigned char)(ubrr >> 8);
     UBRR0L = (unsigned char)ubrr;
@@ -43,7 +42,7 @@ void USART_SendString(const char *str) {
     }
 }
 
-// === TWI (I2C) Functions ===
+//  *** TWI Initialization ***
 void TWI_Init(void) {
     TWSR = 0x00;
     TWBR = 0x48;  // ~100kHz @ 16MHz
@@ -75,7 +74,7 @@ uint8_t TWI_ReadNACK(void) {
     return TWDR;
 }
 
-// === MPU6050 Functions ===
+//  *** MPU6050 Initialization ***
 #define MPU6050_ADDR 0x68
 
 void MPU6050_Init(void) {
@@ -86,6 +85,10 @@ void MPU6050_Init(void) {
     TWI_Stop();
 }
 
+// Global (previous) acceleration values
+int16_t prev_ax = 0, prev_ay = 0, prev_az = 0;
+
+// Read accelerometer data
 void MPU6050_ReadAccel(int16_t *ax, int16_t *ay, int16_t *az) {
     TWI_Start();
     TWI_Write(MPU6050_ADDR << 1);
@@ -99,19 +102,36 @@ void MPU6050_ReadAccel(int16_t *ax, int16_t *ay, int16_t *az) {
 
     TWI_Stop();
 }
+// Read gyroscope data
+void MPU6050_ReadGyro(int16_t *gx, int16_t *gy, int16_t *gz) {
+    TWI_Start();
+    TWI_Write(MPU6050_ADDR << 1);
+    TWI_Write(0x43);  // Starting register for accelerometer
+    TWI_Start();
+    TWI_Write((MPU6050_ADDR << 1) | 1);  // Read mode
 
-// === Main ===
+    *gx = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
+    *gy = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
+    *gz = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadNACK();
+
+    TWI_Stop();
+}
+
+
 int main(void) {
     USART_Init(MYUBRR);
     TWI_Init();
     MPU6050_Init();
 
-    char buffer[64];
+    char buffer[128];
     int16_t ax, ay, az;
+    int16_t gx, gy, gz;
 
     while (1) {
         MPU6050_ReadAccel(&ax, &ay, &az);
-        snprintf(buffer, sizeof(buffer), "AX:%d AY:%d AZ:%d\r\n", ax, ay, az);
+        MPU6050_ReadGyro(&gx, &gy, &gz);
+
+        snprintf(buffer, sizeof(buffer), "Accelerometer (x,y,z): %d, %d, %d | Gyroscope (x,y,z): %d, %d, %d\r\n", ax, ay, az, gx, gy, gz);
         USART_SendString(buffer);
         _delay_ms(500);
     }
