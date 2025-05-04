@@ -117,6 +117,22 @@ void MPU6050_ReadGyro(int16_t *gx, int16_t *gy, int16_t *gz) {
     TWI_Stop();
 }
 
+volatile uint32_t millis_counter = 0;
+
+void Timer1_Init(void) {
+    // CTC mode
+    TCCR1B |= (1 << WGM12);
+    // Prescaler 64
+    TCCR1B |= (1 << CS11) | (1 << CS10);
+    // 1 ms at 16 MHz: (16e6 / (64 * 1000)) - 1 = 249
+    OCR1A = 249;
+    // Enable compare match interrupt
+    TIMSK1 |= (1 << OCIE1A);
+    // Enable global interrupts
+    sei();
+}
+ISR(TIMER1_COMPA_vect) { millis_counter++; }
+
 
 int main(void) {
     USART_Init(MYUBRR);
@@ -127,7 +143,14 @@ int main(void) {
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
 
+    uint32_t last_time = 0;
+
     while (1) {
+        if (millis_counter - last_time >= 1000) {
+            USART_SendString("1 second elapsed\r\n");
+            last_time = millis_counter;
+        }
+
         MPU6050_ReadAccel(&ax, &ay, &az);
         MPU6050_ReadGyro(&gx, &gy, &gz);
 
