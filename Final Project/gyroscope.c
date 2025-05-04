@@ -131,8 +131,16 @@ void Timer1_Init(void) {
     // Enable global interrupts
     sei();
 }
-ISR(TIMER1_COMPA_vect) { millis_counter++; }
-
+ISR(TIMER1_COMPA_vect) { 
+    millis_counter++; 
+}
+uint32_t millis(void) {
+    uint32_t ms;
+    cli();
+    ms = millis_counter;
+    sei();
+    return ms;
+}
 
 int main(void) {
     USART_Init(MYUBRR);
@@ -142,19 +150,26 @@ int main(void) {
     char buffer[128];
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
+    static uint8_t header_printed = 0;
 
     uint32_t last_time = 0;
 
     while (1) {
-        if (millis_counter - last_time >= 1000) {
+        uint32_t now = millis();
+        if (now - last_time >= 1000) {
             USART_SendString("1 second elapsed\r\n");
-            last_time = millis_counter;
+            last_time = now;
         }
 
         MPU6050_ReadAccel(&ax, &ay, &az);
         MPU6050_ReadGyro(&gx, &gy, &gz);
 
-        snprintf(buffer, sizeof(buffer), "Accelerometer (x,y,z): %d, %d, %d | Gyroscope (x,y,z): %d, %d, %d\r\n", ax, ay, az, gx, gy, gz);
+        // Format accelerometer and gyroscope data
+        if (!header_printed) {
+            USART_SendString("AX\tAY\tAZ\tGX\tGY\tGZ\r\n");
+            header_printed = 1;
+        }
+        snprintf(buffer, sizeof(buffer),"% d\t % d\t % d\t % d\t % d\t % d\r\n", ax, ay, az, gx, gy, gz);
         USART_SendString(buffer);
         _delay_ms(500);
     }
