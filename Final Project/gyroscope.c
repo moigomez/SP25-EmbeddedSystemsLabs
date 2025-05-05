@@ -146,30 +146,52 @@ int main(void) {
     USART_Init(MYUBRR);
     TWI_Init();
     MPU6050_Init();
+    Timer1_Init();
 
     char buffer[128];
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
+
     static uint8_t header_printed = 0;
 
     uint32_t last_time = 0;
+    static int16_t prev_az = 0;
+    static uint32_t prev_time = 0;
+
+    int count = 0;
 
     while (1) {
-        uint32_t now = millis();
-        if (now - last_time >= 1000) {
-            USART_SendString("1 second elapsed\r\n");
-            last_time = now;
+        uint32_t current_time = millis();
+        float dt = current_time - prev_time;  // in milliseconds
+        char derv_string[64];
+        float daz_dt = 0;
+
+        if ((current_time - last_time >= 1000)) {
+            count = 0;
+            last_time = current_time;
         }
 
         MPU6050_ReadAccel(&ax, &ay, &az);
         MPU6050_ReadGyro(&gx, &gy, &gz);
+
+        if (dt > 0) {
+            daz_dt = compute_derivative(az, prev_az, dt);  // jerk in LSB/ms
+        }
+
+        prev_az = az;
+        prev_time = current_time;
+        float mag = sqrt((double)ax * ax + (double)ay * ay + (double)az * az);
+
+        if ((mag >= 36000.0) && (mag < 50000.0) || (daz_dt >= 250.0) && (daz_dt < 400.0)) {
+            count++;
+        }
 
         // Format accelerometer and gyroscope data
         if (!header_printed) {
             USART_SendString("AX\tAY\tAZ\tGX\tGY\tGZ\r\n");
             header_printed = 1;
         }
-        snprintf(buffer, sizeof(buffer),"% d\t % d\t % d\t % d\t % d\t % d\r\n", ax, ay, az, gx, gy, gz);
+        snprintf(buffer, sizeof(buffer),"%d\t %d\t %d\t %d\t %d\t %d\t %i\r\n", ax, ay, az, gx, gy, gz, count);
         USART_SendString(buffer);
         _delay_ms(500);
     }
