@@ -14,6 +14,7 @@
 #define F_CPU 16000000UL                // Clock frequency (16MHz)
 #include <avr/interrupt.h>
 #include <avr/io.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,6 +117,9 @@ void MPU6050_ReadGyro(int16_t *gx, int16_t *gy, int16_t *gz) {
 
     TWI_Stop();
 }
+float compute_derivative(int16_t current, int16_t previous, float dt_ms) {
+    return (float)(current - previous) / dt_ms;
+}
 
 volatile uint32_t millis_counter = 0;
 
@@ -131,9 +135,7 @@ void Timer1_Init(void) {
     // Enable global interrupts
     sei();
 }
-ISR(TIMER1_COMPA_vect) { 
-    millis_counter++; 
-}
+ISR(TIMER1_COMPA_vect) { millis_counter++; }
 uint32_t millis(void) {
     uint32_t ms;
     cli();
@@ -141,6 +143,8 @@ uint32_t millis(void) {
     sei();
     return ms;
 }
+
+bool isShaking = false;
 
 int main(void) {
     USART_Init(MYUBRR);
@@ -166,8 +170,9 @@ int main(void) {
         char derv_string[64];
         float daz_dt = 0;
 
-        if ((current_time - last_time >= 1000)) {
+        if ((current_time - last_time >= 300)) {
             count = 0;
+            isShaking = false;
             last_time = current_time;
         }
 
@@ -175,7 +180,7 @@ int main(void) {
         MPU6050_ReadGyro(&gx, &gy, &gz);
 
         if (dt > 0) {
-            daz_dt = compute_derivative(az, prev_az, dt);  // jerk in LSB/ms
+            daz_dt = compute_derivative(az, prev_az, dt);
         }
 
         prev_az = az;
@@ -185,14 +190,11 @@ int main(void) {
         if ((mag >= 36000.0) && (mag < 50000.0) || (daz_dt >= 250.0) && (daz_dt < 400.0)) {
             count++;
         }
-
-        // Format accelerometer and gyroscope data
-        if (!header_printed) {
-            USART_SendString("AX\tAY\tAZ\tGX\tGY\tGZ\r\n");
-            header_printed = 1;
+        if (count >= 4) {
+            USART_SendString("Shaking\r\n");
+            isShaking = true;
         }
-        snprintf(buffer, sizeof(buffer),"%d\t %d\t %d\t %d\t %d\t %d\t %i\r\n", ax, ay, az, gx, gy, gz, count);
+        snprintf(buffer, sizeof(buffer), "%d\t %d\t %d\t %d\t %d\t %d\t %i\r\n", ax, ay, az, gx, gy, gz, count);
         USART_SendString(buffer);
-        _delay_ms(500);
     }
 }
