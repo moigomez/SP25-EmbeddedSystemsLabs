@@ -14,10 +14,10 @@
 #define F_CPU 16000000UL                // Clock frequency (16MHz)
 #include <avr/interrupt.h>
 #include <avr/io.h>
+#include <math.h>
 #include <stdbool.h>
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <util/delay.h>
 
 // USART Definitions
@@ -86,9 +86,6 @@ void MPU6050_Init(void) {
     TWI_Stop();
 }
 
-// Global (previous) acceleration values
-int16_t prev_ax = 0, prev_ay = 0, prev_az = 0;
-
 // Read accelerometer data
 void MPU6050_ReadAccel(int16_t *ax, int16_t *ay, int16_t *az) {
     TWI_Start();
@@ -100,7 +97,6 @@ void MPU6050_ReadAccel(int16_t *ax, int16_t *ay, int16_t *az) {
     *ax = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
     *ay = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
     *az = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadNACK();
-
     TWI_Stop();
 }
 // Read gyroscope data
@@ -114,28 +110,19 @@ void MPU6050_ReadGyro(int16_t *gx, int16_t *gy, int16_t *gz) {
     *gx = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
     *gy = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadACK();
     *gz = ((int16_t)TWI_ReadACK() << 8) | TWI_ReadNACK();
-
     TWI_Stop();
 }
-float compute_derivative(int16_t current, int16_t previous, float dt_ms) {
-    return (float)(current - previous) / dt_ms;
-}
 
+// Timer for millis()
 volatile uint32_t millis_counter = 0;
-
+ISR(TIMER1_COMPA_vect) { millis_counter++; }
 void Timer1_Init(void) {
-    // CTC mode
     TCCR1B |= (1 << WGM12);
-    // Prescaler 64
-    TCCR1B |= (1 << CS11) | (1 << CS10);
-    // 1 ms at 16 MHz: (16e6 / (64 * 1000)) - 1 = 249
-    OCR1A = 249;
-    // Enable compare match interrupt
+    TCCR1B |= (1 << CS11) | (1 << CS10);  // Prescaler 64
+    OCR1A = 249;                          // 1ms @ 16MHz/64
     TIMSK1 |= (1 << OCIE1A);
-    // Enable global interrupts
     sei();
 }
-ISR(TIMER1_COMPA_vect) { millis_counter++; }
 uint32_t millis(void) {
     uint32_t ms;
     cli();
@@ -144,7 +131,16 @@ uint32_t millis(void) {
     return ms;
 }
 
-bool isShaking = false;
+float compute_derivative(int16_t current, int16_t previous, float dt_ms) {
+    return (float)(current - previous) / dt_ms;
+}
+
+// Moving average related
+#define MA_WINDOW_SIZE 20
+float mag_buffer[MA_WINDOW_SIZE] = {0};
+uint8_t mag_index = 0;
+float mag_sum = 0;
+
 
 int main(void) {
     USART_Init(MYUBRR);
@@ -152,49 +148,60 @@ int main(void) {
     MPU6050_Init();
     Timer1_Init();
 
-    char buffer[128];
+    DDRB |= (1 << PB5);
+
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
 
-    static uint8_t header_printed = 0;
-
-    uint32_t last_time = 0;
-    static int16_t prev_az = 0;
-    static uint32_t prev_time = 0;
+    int16_t prev_az = 0;
+    uint32_t prev_time = 0;
+    uint32_t last_reset_time = 0;
 
     int count = 0;
-
+    bool isShaking = false;
     while (1) {
-        uint32_t current_time = millis();
-        float dt = current_time - prev_time;  // in milliseconds
-        char derv_string[64];
-        float daz_dt = 0;
-
-        if ((current_time - last_time >= 300)) {
+        uint32_t now = millis();
+        float dt = now - prev_time;
+        if ((now - last_reset_time) >= 300) {
             count = 0;
             isShaking = false;
-            last_time = current_time;
+            last_reset_time = now;
         }
 
         MPU6050_ReadAccel(&ax, &ay, &az);
         MPU6050_ReadGyro(&gx, &gy, &gz);
 
-        if (dt > 0) {
+        float daz_dt = 0.0;
+
+        if (dt > 0) { 
             daz_dt = compute_derivative(az, prev_az, dt);
         }
-
         prev_az = az;
-        prev_time = current_time;
+        prev_time = now;
+
+        // Compute current magnitude
         float mag = sqrt((double)ax * ax + (double)ay * ay + (double)az * az);
 
-        if ((mag >= 36000.0) && (mag < 50000.0) || (daz_dt >= 250.0) && (daz_dt < 400.0)) {
+        // Subtract oldest value, add new value
+        mag_sum -= mag_buffer[mag_index];
+        mag_buffer[mag_index] = mag;
+        mag_sum += mag;
+        // Advance index circularly
+        mag_index = (mag_index + 1) % MA_WINDOW_SIZE;
+        // Compute average
+        float mag_avg = mag_sum / MA_WINDOW_SIZE;
+
+        // Check if conditions met for shaking
+        if (((mag >= 36000.0 && mag < 40000.0 && mag_avg > 22000.0) || (daz_dt >= 250.0 && daz_dt < 400.0))) {
             count++;
         }
+
         if (count >= 4) {
-            USART_SendString("Shaking\r\n");
             isShaking = true;
+            PORTB |= (1 << PB5);
+        } else {
+            PORTB &= ~(1 << PB5);
         }
-        snprintf(buffer, sizeof(buffer), "%d\t %d\t %d\t %d\t %d\t %d\t %i\r\n", ax, ay, az, gx, gy, gz, count);
-        USART_SendString(buffer);
+        _delay_ms(10);  // Added to stabilize loop rate
     }
 }
